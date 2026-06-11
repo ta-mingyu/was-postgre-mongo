@@ -9,10 +9,11 @@
 
 | 항목 | 값 |
 | :--- | :--- |
-| **현재 Phase** | Phase 3 - PPT 슬라이드 아웃라인 및 스크립트 빌드 |
-| **Phase 2 상태** | Completed (리서치 및 Gap 분석 완료) |
-| **Phase 3 상태** | Discussion-Driven Structure로 슬라이드 덱 설계 중 |
-| **마지막 갱신** | 2026-05-27 (Phase 3 착수, PPT 패러다임 전환) |
+| **현재 Phase** | Phase 4 - DB 설정 표준 가이드라인 작성 |
+| **Phase 3 상태** | Completed (WAS 표준 가이드라인 최종본 작성 완료) |
+| **Phase 4 상태** | In Progress (PostgreSQL + PgPool-II 완성, MongoDB 보완 중) |
+| **Phase 5 상태** | Pending (MongoDB RAM/코어별 매트릭스 상세 수치) |
+| **마지막 갱신** | 2026-06-10 (harness 도메인 분리, PPT 제거, reports/ 정리) |
 | **활성 HITL 이슈** | 2건 (HITL-003, HITL-004) |
 | **종료 HITL 이슈** | 2건 (HITL-001, HITL-002 - Scope-out) |
 
@@ -25,7 +26,13 @@
 - JVM (Heap/Metaspace) 메모리 전략
 - GC 알고리즘 표준화
 - WAS 레벨의 Connection Pool 설정
-- 플랫폼개발팀의 MongoDB 구조
+- PostgreSQL (Streaming Replication + PgPool-II)
+- MongoDB (Replica Set, WiredTiger, Profiling)
+
+**Report 산출물 위치:**
+
+- WAS 표준 가이드: `reports/was-standard-guide.md` (최종본)
+- DB 표준 가이드: `reports/db-standard-guide.md` (PostgreSQL + MongoDB + PgPool-II)
 
 **제외 영역:**
 
@@ -120,6 +127,7 @@
 | :--- | :--- |
 | **상태** | Open (TA 응답 대기) |
 | **배경** | ParOldGen 90.2% (1,418,698K / 1,572,864K). Parallel GC + Heap 2048m 고정 |
+| **관련 도메인** | WAS (harness/was-rules.md) |
 
 ### HITL-004: 플랫폼개발팀 - MongoDB COLLSCAN 모니터링 미수행
 
@@ -127,3 +135,4 @@
 | :--- | :--- |
 | **상태** | Open (TA 응답 대기) |
 | **배경** | MongoDB Replica Set 운영 중 COLLSCAN 체크 미수행 |
+| **관련 도메인** | MongoDB (harness/mongodb-rules.md) |
