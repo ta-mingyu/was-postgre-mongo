@@ -31,25 +31,29 @@ graph TD
 에이전트 구동 시 실시간 컨텍스트 및 도메인별 실행 규칙은 `harness/` 하위 파일에서 관리한다.
 `AGENTS.md`는 목차(Index) 역할만 수행하며, 구동 규칙은 harness 파일에서 로드한다.
 
-### WAS Domain
+### 통합 규정 (최종 산출물)
 
-- [WAS Standard Guide V3](./reports/was-standard-guide-v3.md) -- 산출물 최신본 (16GB Heap 정정, MongoDB 세션 개념 보완, somaxconn 연동 지침, Boot 2.x 호환성 정교화)
-- [WAS Standard Guide V2](./reports/was-standard-guide-v2.md) -- 산출물 이전 버전 (참조용)
-- [WAS Standard Guide V1](./reports/was-standard-guide.md) -- 산출물 초기 버전 (참조용)
+- [인프라 표준 설정 규정 (확정본)](./reports/final-standard-guide.md) -- WAS + DB 통합 확정 배포본 (IT기획실 → 전 사업팀)
+
+### WAS Domain (참조용)
+
+- [WAS Standard Guide V3](./reports/was-standard-guide-v3.md) -- WAS 개별 가이드 최신본 (참조용)
+- [WAS Standard Guide V2](./reports/was-standard-guide-v2.md) -- 이전 버전 (참조용)
+- [WAS Standard Guide V1](./reports/was-standard-guide.md) -- 초기 버전 (참조용)
 - [WAS Domain Rules](./harness/was-rules.md) -- WAS 도메인 작업 시 에이전트 구동 규칙
 
-### PostgreSQL Domain
+### PostgreSQL Domain (참조용)
 
-- [DB Standard Guide V3](./reports/db-standard-guide-v3.md) -- 산출물 최신본 (PostgreSQL 4종 아키텍처 + MongoDB 8.3 + PgPool-II)
-- [DB Standard Guide V2](./reports/db-standard-guide-v2.md) -- 산출물 이전 버전 (참조용)
-- [DB Standard Guide V1](./reports/db-standard-guide.md) -- 산출물 이전 버전 (참조용)
+- [DB Standard Guide V3](./reports/db-standard-guide-v3.md) -- DB 개별 가이드 최신본 (참조용)
+- [DB Standard Guide V2](./reports/db-standard-guide-v2.md) -- 이전 버전 (참조용)
+- [DB Standard Guide V1](./reports/db-standard-guide.md) -- 초기 버전 (참조용)
 - [PostgreSQL Domain Rules](./harness/postgresql-rules.md) -- PostgreSQL / PgPool-II 도메인 작업 시 에이전트 구동 규칙
 
-### MongoDB Domain
+### MongoDB Domain (참조용)
 
-- [DB Standard Guide V3](./reports/db-standard-guide-v3.md) -- 산출물 최신본 (MongoDB 8.3 기준 전면 갱신)
-- [DB Standard Guide V2](./reports/db-standard-guide-v2.md) -- 산출물 이전 버전 (참조용)
-- [DB Standard Guide V1](./reports/db-standard-guide.md) -- 산출물 이전 버전 (참조용)
+- [DB Standard Guide V3](./reports/db-standard-guide-v3.md) -- DB 개별 가이드 최신본 (참조용, MongoDB 8.3 기준)
+- [DB Standard Guide V2](./reports/db-standard-guide-v2.md) -- 이전 버전 (참조용)
+- [DB Standard Guide V1](./reports/db-standard-guide.md) -- 초기 버전 (참조용)
 - [MongoDB Domain Rules](./harness/mongodb-rules.md) -- MongoDB 도메인 작업 시 에이전트 구동 규칙
 
 ### 리서치
@@ -68,6 +72,7 @@ graph TD
 
 - [컨설팅사 리뷰 답변 메일](./email/re-was-guide-review.md) -- 1차 답변
 - [컨설팅사 2차 답변 메일](./email/re-was-guide-review-2.md) -- 2차 답변
+- [DBA 검수 의견 반영 결과 및 통합 규정 최종 검수 요청](./email/re-was-guide-review-3.md) -- DBA(데이타뱅크 조도형 차장) PostgreSQL 6건 피드백 반영 완료, 통합 확정본 검수 요청
 
 ### 작업 관리
 

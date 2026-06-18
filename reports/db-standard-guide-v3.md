@@ -40,11 +40,11 @@
 
 ```mermaid
 flowchart TD
-    START(["PostgreSQL 아키텍처 선택"]) --> Q1{"트랜잭션/HA 필요?"}
+    START(["PostgreSQL 아키텍처 선택"]) --> Q1{"데이터 복제/HA 필요?"}
     Q1 -->|"아니오"| PG_SA[("Standalone")]
     Q1 -->|"예"| Q2{"RTO 요구사항?"}
-    Q2 -->|"수 분 단위 허용"| Q3{"DBA 수동 페일오버<br/>가능?"}
-    Q2 -->|"30초 이내"| Q4{"다수 WAS 공유 또는<br/>읽기 분산 필요?"}
+    Q2 -->|"수 분 단위 허용"| Q3{"인적 개입 기반의 수동<br/>장애 조치(Failover)<br/>프로세스 수용 가능?"}
+    Q2 -->|"30초 이내"| Q4{"통합 커넥션 풀링 및<br/>읽기 부하 분산<br/>(Read Load Balancing) 필요?"}
     Q3 -->|"예"| PG_SR[("SR Only")]
     Q3 -->|"아니오"| Q4
     Q4 -->|"예"| PG_PGPOOL[("PgPool+SR")]
@@ -62,9 +62,9 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    START(["MongoDB 아키텍처 선택"]) --> Q1{"환경?"}
-    Q1 -->|"개발/테스트"| MG_SA[("Standalone")]
-    Q1 -->|"프로덕션"| Q2{"데이터 > 1TB 또는<br/>쓰기 TPS > 20k?"}
+    START(["MongoDB 아키텍처 선택"]) --> Q1{"고가용성(HA) 및<br/>데이터 복제 필요?"}
+    Q1 -->|"아니오 (개발/테스트)"| MG_SA[("Standalone")]
+    Q1 -->|"예 (프로덕션)"| Q2{"데이터 > 1TB 또는<br/>쓰기 TPS > 20k?"}
     Q2 -->|"아니오"| MG_RS[("Replica Set<br/>PSS")]
     Q2 -->|"예"| MG_SHARD[("Sharded<br/>Cluster")]
 
@@ -124,16 +124,16 @@ graph LR
 | **wal_level** | `replica` | 복제 구성: `replica` | 기본 표준은 `replica` (PITR 및 아카이브 백업 허용). `minimal`은 백업이 전혀 필요 없는 순수 개발계 및 휘발성 임시/로그 데이터 장비에 한해서만 허용 |
 | **max_wal_senders** | `0` | 복제 구성: `3~5` | 복제 불필요 |
 | **hot_standby** | `off` | 복제 구성: `on` (Replica) | Standby 없음 |
-| **archive_mode** | `off` | 복제 구성: `on` (선택) | 아카이빙 불필요 |
+| **archive_mode** | `off` | 복제 구성: `always` | 아카이빙 불필요 |
 
 #### RAM별 파라미터 매트릭스
 
 | DB 서버 RAM | shared_buffers | effective_cache_size | work_mem | maintenance_work_mem | wal_buffers | max_connections |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **8 GB** | 2 GB | 6 GB | 10 MB | 384 MB | 16 MB | 100 |
-| **16 GB** | 4 GB | 12 GB | 32 MB | 768 MB | 16 MB | 100 |
-| **32 GB** | 8 GB | 24 GB | 64 MB | 1.5 GB | 16 MB | 100 |
-| **64 GB** | 16 GB | 48 GB | 128 MB | 3 GB | 16 MB | 100 |
+| **8 GB** | 2 GB | 6 GB | 8 MB | 384 MB | 16 MB | 100 |
+| **16 GB** | 4 GB | 12 GB | 16 MB | 768 MB | 16 MB | 100 |
+| **32 GB** | 8 GB | 24 GB | 32 MB | 1.5 GB | 16 MB | 100 |
+| **64 GB** | 16 GB | 48 GB | 64 MB | 3 GB | 16 MB | 100 |
 
 > **[참고사항]** Standalone은 단일 WAS 또는 소수 WAS만 연결되므로 `max_connections = 100`으로 충분. `wal_level = replica`를 기본 표준으로 설정하여 PITR 및 아카이브 백업을 항상 허용함. 단, 백업이 전혀 필요 없는 순수 개발계 및 휘발성 임시/로그 데이터 장비에 한해서만 `minimal`로 변경을 허용함. `max_wal_size`는 기본값(1GB) 사용 가능하나, 쓰기 빈도에 따라 2GB까지 상향 허용.
 
@@ -166,6 +166,9 @@ graph LR
 | **wal_level** | `replica` | -- | 스트리밍 복제 필수 |
 | **max_wal_senders** | `3~5` | `3~5` | 장애 시 Replica가 Primary로 승격(Promote) 후 다운스트림 복제본 수용 및 백업 연결을 즉시 허용해야 하므로 Primary와 동일하게 설정 |
 | **hot_standby** | -- | `on` | Replica에서 읽기 쿼리 수용 |
+| **hot_standby_feedback** | -- | `on` | Replica 읽기 분산 시 Primary의 Vacuum 작업으로 인한 쿼리 취소(Conflict) 방지 |
+| **archive_mode** | -- | `always` | WAL 스트리밍 단절 시 아카이브 로그를 통한 복제 재동기화 보장 및 승격 대비 |
+| **max_connections** | `100` | `100` | OOM 예방을 위해 100으로 엄격히 제한 |
 | **listen_addresses** | `'*'` | `'*'` | 원격 접속 허용 |
 
 #### 페일오버 절차 (수동)
@@ -187,10 +190,10 @@ pg_ctl promote -D /var/lib/postgresql/data
 
 | DB 서버 RAM | shared_buffers | effective_cache_size | work_mem | maintenance_work_mem | wal_buffers | max_wal_size | max_wal_senders |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **8 GB** | 2 GB | 6 GB | 10 MB | 384 MB | 16 MB | 2 GB | 3 |
-| **16 GB** | 4 GB | 12 GB | 32 MB | 1 GB | 16 MB | 4 GB | 3 |
-| **32 GB** | 8 GB | 24 GB | 64 MB | 2 GB | 16 MB | 16 GB | 3 |
-| **64 GB** | 16 GB | 48 GB | 128 MB | 4 GB | 16 MB | 32 GB | 5 |
+| **8 GB** | 2 GB | 6 GB | 8 MB | 384 MB | 16 MB | 2 GB | 3 |
+| **16 GB** | 4 GB | 12 GB | 16 MB | 1 GB | 16 MB | 4 GB | 3 |
+| **32 GB** | 8 GB | 24 GB | 32 MB | 2 GB | 16 MB | 16 GB | 3 |
+| **64 GB** | 16 GB | 48 GB | 64 MB | 4 GB | 16 MB | 32 GB | 5 |
 
 ---
 
@@ -246,13 +249,15 @@ graph LR
 | **wal_level** | `replica` | -- | 스트리밍 복제 필수 |
 | **max_wal_senders** | `3~5` | `3~5` | 장애 시 승격(Promote) 대비 Primary/Replica 통일 |
 | **hot_standby** | -- | `on` | PgPool 읽기 분산 필수 |
-| **max_connections** | `200~500` | `200~500` | PgPool 백엔드 수용량 * 1.5 이상 |
+| **hot_standby_feedback** | -- | `on` | Replica 읽기 분산 시 Primary의 Vacuum 작업으로 인한 쿼리 취소(Conflict) 방지 |
+| **archive_mode** | -- | `always` | WAL 스트리밍 단절 시 아카이브 로그를 통한 복제 재동기화 보장 및 승격 대비 |
+| **max_connections** | `100` | `100` | OOM 예방을 위해 100으로 엄격히 제한. PgPool이 커넥션 풀링 및 큐잉을 담당하므로 num_init_children(120) > max_connections(100) 구조에서 초과분은 PgPool 큐에서 안전 대기 |
 
 #### PgPool-II 전용 파라미터
 
 | 우선순위 | 파라미터 | 산정 기준 | 비고 |
 | :---: | :--- | :--- | :--- |
-| [높음] | **num_init_children** | `Sum(WAS maxPoolSize) + 여유 (최소 120)` | PgPool이 수용할 동시 클라이언트 연결 수 |
+| [높음] | **num_init_children** | `Sum(WAS maxPoolSize) 감안` (단, 4GB RAM 인프라 고려 Max 120 제한) | PgPool이 수용할 동시 클라이언트 연결 수 (120개가 순간 폭주 시 100개는 즉시 처리, 20개는 PgPool 큐에서 안전 대기) |
 | [높음] | **max_pool** | 단일 DB/계정: `1`, 복수 DB/계정: `조합 수` | 불필요한 상향 시 백엔드 연결 기하급수적 증가 |
 | [중간] | **child_life_time** | `1,680` (28min) | DB idle_session_timeout(30min)보다 짧게 |
 | [중간] | **connection_life_time** | `1,680` (28min) | PgPool -> DB 연결 수명 |
@@ -269,10 +274,10 @@ graph LR
 
 | DB 서버 RAM | shared_buffers | effective_cache_size | work_mem | maintenance_work_mem | wal_buffers | max_wal_size | max_wal_senders |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **8 GB** | 2 GB | 6 GB | 10 MB | 384 MB | 16 MB | 2 GB | 3~5 |
-| **16 GB** | 4 GB | 12 GB | 32 MB | 1 GB | 16 MB | 4 GB | 3~5 |
-| **32 GB** | 8 GB | 24 GB | 64 MB | 2 GB | 16 MB | 16 GB | 3~5 |
-| **64 GB** | 16 GB | 48 GB | 128 MB | 4 GB | 16 MB | 32 GB | 5 |
+| **8 GB** | 2 GB | 6 GB | 8 MB | 384 MB | 16 MB | 2 GB | 3~5 |
+| **16 GB** | 4 GB | 12 GB | 16 MB | 1 GB | 16 MB | 4 GB | 3~5 |
+| **32 GB** | 8 GB | 24 GB | 32 MB | 2 GB | 16 MB | 16 GB | 3~5 |
+| **64 GB** | 16 GB | 48 GB | 64 MB | 4 GB | 16 MB | 32 GB | 5 |
 
 ---
 
@@ -353,10 +358,10 @@ graph LR
 
 | DB 서버 RAM | shared_buffers | effective_cache_size | work_mem | maintenance_work_mem | wal_buffers | max_wal_size | max_wal_senders |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **8 GB** | 2 GB | 6 GB | 10 MB | 384 MB | 16 MB | 2 GB | 3~5 |
-| **16 GB** | 4 GB | 12 GB | 32 MB | 1 GB | 16 MB | 4 GB | 3~5 |
-| **32 GB** | 8 GB | 24 GB | 64 MB | 2 GB | 16 MB | 16 GB | 5 |
-| **64 GB** | 16 GB | 48 GB | 128 MB | 4 GB | 16 MB | 32 GB | 5 |
+| **8 GB** | 2 GB | 6 GB | 8 MB | 384 MB | 16 MB | 2 GB | 5 |
+| **16 GB** | 4 GB | 12 GB | 16 MB | 1 GB | 16 MB | 4 GB | 5 |
+| **32 GB** | 8 GB | 24 GB | 32 MB | 2 GB | 16 MB | 16 GB | 5 |
+| **64 GB** | 16 GB | 48 GB | 64 MB | 4 GB | 16 MB | 32 GB | 5 |
 
 > **[참고사항]** Patroni 환경에서 PostgreSQL 파라미터는 `patroni.yml`의 `postgresql.parameters` 섹션에서 관리. Patroni가 자동으로 Primary/Replica 역할 전환 시 파라미터를 적용하므로, `postgresql.conf` 직접 편집은 지양.
 
@@ -585,12 +590,12 @@ graph LR
 
 | DB 서버 RAM | shared_buffers | effective_cache_size | work_mem | maintenance_work_mem | wal_buffers | 비고 |
 | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| **8 GB** | **2 GB** | 6 GB | 10 MB | 384 MB | 16 MB | 소규모 |
-| **16 GB** | **4 GB** | 12 GB | 32 MB | 1 GB | 16 MB | 표준 |
-| **32 GB** | **8 GB** | 24 GB | 64 MB | 2 GB | 16 MB | 고성능 |
-| **64 GB** | **16 GB** | 48 GB | 128 MB | 4 GB | 16 MB | 대규모 |
+| **8 GB** | **2 GB** | 6 GB | 8 MB | 384 MB | 16 MB | 소규모 |
+| **16 GB** | **4 GB** | 12 GB | 16 MB | 1 GB | 16 MB | 표준 |
+| **32 GB** | **8 GB** | 24 GB | 32 MB | 2 GB | 16 MB | 고성능 |
+| **64 GB** | **16 GB** | 48 GB | 64 MB | 4 GB | 16 MB | 대규모 |
 
-> **아키텍처별 참고**: Standalone은 `work_mem` 상향 가능(max_connections 적으므로). SR/PgPool/Patroni는 위 표 기준값 적용. Patroni는 `postgresql.conf` 대신 `patroni.yml`에서 관리.
+> **아키텍처별 참고**: Standalone은 `work_mem` 상향 가능(max_connections 적으므로). SR/PgPool/Patroni는 위 표 기준값 적용. Patroni는 `postgresql.conf` 대신 `patroni.yml`에서 관리. work_mem 산정 공식: `(RAM - shared_buffers) / (max_conn * 8)` — max_connections가 전원 동시 활성되어 다중 정렬 연산을 수행하더라도 OOM을 예방하는 안전 마진 적용.
 
 #### WAL/체크포인트 설정
 
@@ -621,7 +626,7 @@ graph LR
 
 | 우선순위 | 파라미터 | 표준값 | 비고 |
 | :---: | :--- | :--- | :--- |
-| [높음] | **max_connections** | 200 ~ 500 | 아키텍처별 상이 (Standalone: 100) |
+| [높음] | **max_connections** | `100` | OOM 예방을 위해 모든 아키텍처 공통 100으로 엄격히 제한 |
 | [높음] | **superuser_reserved_connections** | 3 | 관리자 예약 |
 | [중간] | **statement_timeout** | 30,000 ms (30s) | 장기 실행 쿼리 방지 |
 | [높음] | **lock_timeout** | 10,000 ms (10s) | Lock 대기 시간 제한 |
@@ -771,7 +776,7 @@ PostgreSQL Session Timeout Guardrails
 # -------------------------------------------------------
 shared_buffers = 2GB                # [높음] RAM * 0.25
 effective_cache_size = 6GB          # [높음] RAM * 0.75
-work_mem = 10MB                     # [높음] (RAM - shared_buffers) / (max_conn * 3)
+work_mem = 8MB                      # [높음] (RAM - shared_buffers) / (max_conn * 8)
 maintenance_work_mem = 384MB        # [중간] RAM * 0.05
 wal_buffers = 16MB                  # [중간] 고정
 
@@ -826,7 +831,7 @@ effective_io_concurrency = 200
 # -------------------------------------------------------
 shared_buffers = 2GB
 effective_cache_size = 6GB
-work_mem = 10MB
+work_mem = 8MB
 maintenance_work_mem = 384MB
 wal_buffers = 16MB
 
@@ -840,12 +845,14 @@ max_wal_size = 2GB
 min_wal_size = 1GB
 checkpoint_completion_target = 0.9
 hot_standby = on                   # [높음] (Replica에서만 의미 있지만 Primary에도 사전 설정)
+hot_standby_feedback = on           # [높음] Replica: Vacuum 충돌 방지
+archive_mode = always               # [높음] WAL 아카이빙 (승격 대비)
 listen_addresses = '*'
 
 # -------------------------------------------------------
 # Connections
 # -------------------------------------------------------
-max_connections = 200               # [높음] WAS 풀 합산 * 1.5 이상
+max_connections = 100               # [높음] OOM 예방 100 고정
 superuser_reserved_connections = 3
 
 # -------------------------------------------------------
@@ -883,6 +890,8 @@ effective_io_concurrency = 200
 ```conf
 # postgresql.conf (Replica 전용 추가 항목)
 hot_standby = on                    # [높음] 읽기 쿼리 수용
+hot_standby_feedback = on           # [높음] Primary Vacuum 충돌 방지
+archive_mode = always               # [높음] WAL 아카이빙 (승격 대비)
 listen_addresses = '*'
 max_wal_senders = 3                 # [높음] 승격(Promote) 시 다운스트림 복제본 수용을 위해 Primary와 동일 설정
 
@@ -906,7 +915,7 @@ pg_basebackup -h primary-host -p 5432 -U replicator -D /var/lib/postgresql/data 
 # -------------------------------------------------------
 shared_buffers = 2GB                # [높음] RAM * 0.25
 effective_cache_size = 6GB          # [높음] RAM * 0.75
-work_mem = 10MB                     # [높음]
+work_mem = 8MB                      # [높음] (RAM - shared_buffers) / (max_conn * 8)
 maintenance_work_mem = 384MB        # [중간]
 wal_buffers = 16MB                  # [중간]
 
@@ -922,9 +931,11 @@ max_wal_senders = 5                 # [높음] Replica + 여유
 # -------------------------------------------------------
 # Connections
 # -------------------------------------------------------
-max_connections = 200               # [높음] PgPool 백엔드 * 1.5 이상
+max_connections = 100               # [높음] OOM 예방 100 고정, PgPool 큐잉으로 초과분 대기
 superuser_reserved_connections = 3  # [높음]
 hot_standby = on                    # [높음] Replica 읽기 쿼리 수용
+hot_standby_feedback = on           # [높음] Replica: Vacuum 충돌 방지
+archive_mode = always               # [높음] WAL 아카이빙 (승격 대비)
 listen_addresses = '*'              # [높음]
 
 # -------------------------------------------------------
@@ -1022,6 +1033,8 @@ bootstrap:
       parameters:
         wal_level: replica
         hot_standby: "on"
+        hot_standby_feedback: "on"
+        archive_mode: "always"
         max_wal_senders: 5
         max_replication_slots: 5
         wal_log_hints: "on"
@@ -1041,10 +1054,10 @@ postgresql:
   parameters:
     shared_buffers: "2GB"
     effective_cache_size: "6GB"
-    work_mem: "10MB"
+    work_mem: "8MB"
     maintenance_work_mem: "384MB"
     wal_buffers: "16MB"
-    max_connections: 200
+    max_connections: 100
     superuser_reserved_connections: 3
     max_wal_size: "2GB"
     min_wal_size: "1GB"
@@ -1354,11 +1367,12 @@ db.orders.aggregate([{ $shardedDataDistribution: {} }])
 
 ### 7.1 PostgreSQL max_connections 산정 기준
 
-| 전사 WAS 인스턴스 수 | WAS 풀 합산 (maxPoolSize) | 권장 max_connections | 비고 |
-| :---: | :---: | :---: | :--- |
-| 10개 이하 | ~200 | **200 ~ 300** | 소규모 |
-| 10 ~ 20개 | 200 ~ 400 | **300 ~ 500** | 중규모 |
-| 20개 이상 | 400+ | **500+** (PgPool-II 필수) | 대규모 |
+| 아키텍처 | max_connections | 비고 |
+| :--- | :---: | :--- |
+| **Standalone** (개발/테스트) | **100** | 소수 WAS만 연결 |
+| **Streaming Replication** | **100** | 다수 WAS 연결 시 70% Ceiling Rule로 풀 합산 제한 |
+| **PgPool+SR** | **100** | PgPool이 커넥션 풀링 및 큐잉 담당. num_init_children(120) > max_connections(100) 구조에서 초과분은 PgPool 큐에서 안전 대기 |
+| **Patroni+etcd** | **100** | HAProxy/PgBouncer가 커넥션 관리 |
 
 ### 7.2 팀별 DB 설정 점검 및 보정 내역
 
@@ -1382,7 +1396,7 @@ db.orders.aggregate([{ $shardedDataDistribution: {} }])
 | [높음] **PgPool num_init_children** | **120** | WAS 풀 합산(100) 대비 안전 마진 |
 | [높음] **PgPool max_pool** | **1** | 단일 DB/단일 계정 |
 | **PgPool -> PG 이론상 최대 연결** | 120개 | `num_init_children(120) * max_pool(1)` |
-| [높음] **PG 권장 max_connections** | **200** | PgPool 백엔드(120) * 1.5 이상 |
+| [높음] **PG 권장 max_connections** | **100** | OOM 예방 100 고정. PgPool 큐잉으로 120개 클라이언트 수용 |
 
 > **※ 주의**: 향후 복수 DB/계정 매핑으로 인해 `max_pool`이 2 이상으로 증가할 경우, 백엔드 이론상 최대 연결 수(`num_init_children * max_pool`)가 기하급수적으로 늘어나 PgPool 서버의 메모리(RAM) 고갈을 초래할 수 있음. 따라서 멀티 DB 환경 확장 시에는 `num_init_children` 값을 하향 조정하거나 PgPool 서버의 RAM 증설이 선행되어야 함.
 
@@ -1390,10 +1404,10 @@ db.orders.aggregate([{ $shardedDataDistribution: {} }])
 
 | 아키텍처 | 커넥션 풀 계층 | WAS 설정 | 중간 계층 | DB 설정 | 비고 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **PG Standalone** | WAS -> PG | HikariCP maxPoolSize=15~30 | 없음 | max_conn >= Sum * 1.5 | 소규모 |
-| **PG SR Only** | WAS -> PG | HikariCP maxPoolSize=15~30 | 없음 | max_conn >= Sum * 1.5 | 앱 레벨 읽기 분산 |
-| **PG PgPool+SR** | WAS -> PgPool -> PG | HikariCP maxPoolSize=20~25 | PgPool num_init_children >= Sum + 여유 | max_conn >= PgPool * 1.5 | 커넥션 풀링 + 읽기 분산 통합 |
-| **PG Patroni** | WAS -> HAProxy -> PG | HikariCP maxPoolSize=20~30 | HAProxy(라우팅) + PgBouncer(선택) | max_conn >= Sum * 1.5 | PgBouncer Transaction mode 시 200 직접 연결 -> 2,000+ 클라이언트 수용 가능 |
+| **PG Standalone** | WAS -> PG | HikariCP maxPoolSize=15~30 | 없음 | max_conn = 100 고정 | 소규모 |
+| **PG SR Only** | WAS -> PG | HikariCP maxPoolSize=15~30 | 없음 | max_conn = 100 고정 | 앱 레벨 읽기 분산 |
+| **PG PgPool+SR** | WAS -> PgPool -> PG | HikariCP maxPoolSize=20~25 | PgPool num_init_children >= Sum + 여유 | max_conn = 100 고정 (PgPool 큐잉) | 커넥션 풀링 + 읽기 분산 통합 |
+| **PG Patroni** | WAS -> HAProxy -> PG | HikariCP maxPoolSize=20~30 | HAProxy(라우팅) + PgBouncer(선택) | max_conn = 100 고정 | HAProxy/PgBouncer가 커넥션 관리 |
 | **MongoDB RS** | WAS -> RS | maxPoolSize=20~50 (MongoDB Driver) | 없음 | maxIncomingConnections=65536 | Driver가 Primary/Secondary 자동 라우팅 |
 | **MongoDB Sharded** | WAS -> mongos -> Shard | maxPoolSize=20~50 (MongoDB Driver) | mongos(라우팅) | mongos 내부 관리 | mongos 수에 비례하여 WAS 풀 분산 |
 
@@ -1440,7 +1454,7 @@ db.orders.aggregate([{ $shardedDataDistribution: {} }])
 | 우선순위 | 검증 항목 | 조건 | 위반 시 영향 |
 | :---: | :--- | :--- | :--- |
 | [높음] | shared_buffers <= RAM * 0.25 | PostgreSQL 공식 권장 | OOM, 커널 페이지 캐시 부족 |
-| [높음] | max_connections >= Sum(WAS maxPoolSize) * 1.5 | 70% Ceiling Rule 역산 | 커넥션 거부, 서비스 장애 |
+| [높음] | max_connections = 100 고정 (모든 아키텍처 공통) | OOM 예방 | OOM 발생, DB 서버 다운 |
 | [높음] | autovacuum = on | 필수 | Dead Tuple 누적, 성능 점진 저하 |
 | [중간] | autovacuum_vacuum_cost_limit >= 1000 | 기본값(200) 대비 상향 | VACUUM 처리 지연 |
 | [높음] | MongoDB Profiling Level >= 1 | COLLSCAN 감지 필수 | 인덱스 누락 무감지 |
@@ -1465,6 +1479,8 @@ db.orders.aggregate([{ $shardedDataDistribution: {} }])
 | :---: | :--- | :--- | :--- |
 | [높음] | wal_level = replica | 복제 필수 | `minimal` 시 복제 불가 |
 | [높음] | hot_standby = on (Replica) | 읽기 분산 필수 | off 시 Replica 읽기 불가 |
+| [높음] | hot_standby_feedback = on (Replica) | Vacuum 충돌 방지 | off 시 Replica 쿼리 취소 빈발 |
+| [높음] | archive_mode = always | WAL 아카이빙 보장 | 승격 후 복구 불가 |
 | [높음] | Replication Slot 구성 | pg_replication_slots 확인 | Slot 누적 시 디스크 Full 위험 |
 | [중간] | 페일오버 스크립트 존재 | 수동 pg_ctl promote 테스트 | 장애 시 대응 지연 |
 
@@ -1473,6 +1489,8 @@ db.orders.aggregate([{ $shardedDataDistribution: {} }])
 | 우선순위 | 검증 항목 | 조건 | 비고 |
 | :---: | :--- | :--- | :--- |
 | [높음] | WAS maxLifetime < PgPool child_life_time < DB idle_session_timeout | 엄격 부등호 | 레이스 컨디션 |
+| [높음] | hot_standby_feedback = on (Replica) | Vacuum 충돌 방지 | off 시 Replica 쿼리 취소 빈발 |
+| [높음] | archive_mode = always | WAL 아카이빙 보장 | 승격 후 복구 불가 |
 | [높음] | PgPool reserved_connections >= 1 | 관리 접속 보장 | 장애 시 DBA 접속 불가 |
 | [높음] | PgPool max_pool = 1 (단일 DB/계정) | 불필요한 커넥션 폭증 방지 | 백엔드 연결 기하급수적 증가 |
 | [높음] | Watchdog 활성화 | SPOF 방지 | PgPool 단일 구성 시 전체 장애 |
