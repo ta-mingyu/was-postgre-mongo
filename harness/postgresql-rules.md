@@ -111,7 +111,7 @@ effective_io_concurrency = 200  (HDD: 2)
 | `child_life_time` | 1,680 (28min) | DB idle_session_timeout(30min)보다 짧게 |
 | `connection_life_time` | 1,680 (28min) | PgPool -> DB 연결 수명 |
 | `client_idle_limit` | 600 (10min) | 클라이언트 유휴 타임아웃 |
-| `reserved_connections` | 1 ~ 2 | PgPool 관리용 예약 슬롯 |
+| `reserved_connections` | 1 | PgPool 관리용 예약 슬롯 |
 
 ### 3.2 로드 밸런싱
 
@@ -187,10 +187,10 @@ DB max_connections = X
 | 팀 | maxPoolSize/인스턴스 | 비고 |
 | :--- | :---: | :--- |
 | 플랫폼개발 (Nice M) | 20 | PostgreSQL + MongoDB 둘 다 사용 |
-| 플랫폼개발 (Nice Charger) | 20 ~ 30 | 웹 100 -> 20~30 축소 |
-| CL플랫폼 | 15 | 현금정보계와 동일 서버 |
-| 주차서비스 | 20 ~ 30 | 과대 설정 축소 |
-| 현금정보계 | 15 | 7 컨테이너 x 15 = 105 |
+| 플랫폼개발 (Nice Charger) | 20 | 웹 100 -> 20 축소 |
+| CL플랫폼 | 20 | 현금정보계와 동일 서버 |
+| 주차서비스 | 20 | 과대 설정 축소 |
+| 현금정보계 | 20 | 7 컨테이너 x 20 = 140 |
 
 ### PgPool 산출 예시 (플랫폼개발팀)
 

@@ -126,8 +126,8 @@ MongoDB connectionPool maxIdleTimeMS (30min)
 
 | WAS-DB 연동 | 풀 계층 | 산정 기준 |
 |---|---|---|
-| 직접 연결 | WAS 풀만 | maxPoolSize = 15~30 / 인스턴스. DB max_conn >= Sum * 1.5 |
-| PgPool 경유 | WAS 풀 + PgPool 풀 | WAS maxPoolSize = 15~30. PgPool num_init_children >= Sum(WAS 풀) + 여유. DB max_conn >= PgPool * 1.5 |
+| 직접 연결 | WAS 풀만 | maxPoolSize = 20 / 인스턴스. DB max_conn >= Sum * 1.5 |
+| PgPool 경유 | WAS 풀 + PgPool 풀 | WAS maxPoolSize = 20. PgPool num_init_children >= Sum(WAS 풀) + 여유. DB max_conn >= PgPool * 1.5 |
 | mongos 경유 | WAS 풀 (mongos 대상) | WAS maxPoolSize = 20~50. mongos가 내부적으로 샤드 분산 |
 | Liberty ConnMgr | Liberty 풀 | maxPoolSize = 15 / 컨테이너. DB max_conn >= Sum(컨테이너 * maxPoolSize) * 1.5 |
 

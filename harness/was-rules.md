@@ -84,7 +84,7 @@ MaxMetaspaceSize = 512m (고정)
 ### 2.5 Connection Pool 산정
 
 ```
-maxPoolSize = 인스턴스당 15 ~ 30 (기본 20)
+maxPoolSize = 인스턴스당 20 (기본 20)
 minimumIdle = maxPoolSize (Fixed-size pool)
 ```
 
@@ -138,7 +138,7 @@ Apache ProxyPass ttl (10s) < WAS keepAliveTimeout (15s)
 
 - Java 17 / 15,25 혼합 운영 -- **현행 유지** (강제 마이그레이션 지양)
 - HikariCP maxPoolSize: Nice Park 기존 5 -> **20** (과소 설정 병목 개선)
-- HikariCP maxPoolSize: Nice Charger 웹 100 -> **20~30** (공유 DB 보호)
+- HikariCP maxPoolSize: Nice Charger 웹 100 -> **20** (공유 DB 보호)
 - maxLifetime: Nice Park 30분 -> **27분**, Nice Charger 33분 -> **27분**
 
 ### CL플랫폼팀
@@ -150,12 +150,12 @@ Apache ProxyPass ttl (10s) < WAS keepAliveTimeout (15s)
 ### 주차서비스팀
 
 - G1 GC 사용 중 (유일) -- Heap 2048m~4096m 가변 설정
-- maxPoolSize 100 -> **20~30** 축소 필요
+- maxPoolSize 100 -> **20** 축소 필요
 - DB2 영역은 스코프 외
 
 ### 현금정보계팀
 
-- 7개 컨테이너 다중화 환경, maxPoolSize=15 per 컨테이너 (총 105)
+- 7개 컨테이너 다중화 환경, maxPoolSize=20 per 컨테이너 (총 105)
 - Metaspace Max 16m 오류 (Min 256~512m보다 작음) -- 정정 필요
 - Liberty Executor: coreThreads = CPU * 2, maxThreads = CPU * 50 명시 설정 권장
 
@@ -202,7 +202,7 @@ net.ipv4.tcp_tw_reuse = 1
 | 1 | `Xms` = `Xmx` | 프로덕션 고정 할당 |
 | 2 | Heap < Container RAM * 0.7 | OOM 방지 |
 | 3 | Heap = 호스트 RAM * 0.625 / N | 다중 인스턴스 분할 |
-| 4 | maxPoolSize <= 30 (기본) | 인스턴스당 상한 |
+| 4 | maxPoolSize = 20 | 인스턴스당 상한 |
 | 5 | Sum(maxPoolSize) <= DB max_conn * 0.7 | 70% Ceiling Rule |
 | 6 | maxLifetime < DB idle_session_timeout | 캐스케이드 정합 |
 | 7 | ProxyPass ttl < WAS keepAliveTimeout | 프록시 레이스 컨디션 방지 |

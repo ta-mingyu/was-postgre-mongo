@@ -67,7 +67,7 @@ cacheSizeGB = 0.5 * (RAM - 1GB)
 ### 2.2 커넥션 풀
 
 ```
-maxPoolSize = 인스턴스당 20 ~ 30 (WAS 표준 기준)
+maxPoolSize = 인스턴스당 20 (WAS 표준 기준)
 minPoolSize = 0 (기본)
 maxIncomingConnections = 65,536 (서버 측)
 ```
@@ -183,7 +183,7 @@ MongoDB driver socketTimeoutMS (0 = 무제한, 애플리케이션 레벨 제어)
 | 항목 | 현재 | 권장 | 비고 |
 | :--- | :--- | :--- | :--- |
 | Profiling Level | 미설정 | **Level 1 (slowms: 100)** | COLLSCAN 감지 필수 |
-| maxPoolSize | -- | **20 ~ 30** (인스턴스당) | 70% Ceiling Rule 준수 |
+| maxPoolSize | -- | **20** (인스턴스당) | 70% Ceiling Rule 준수 |
 | Read Preference | -- | 서비스 특성에 따라 선택 | 정산/결제: `primary` / 조회: `secondaryPreferred` |
 
 ### 향후 보완 필요 (Phase 5)

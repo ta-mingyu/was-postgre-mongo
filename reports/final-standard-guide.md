@@ -42,7 +42,7 @@ MaxRequestWorkers                maxThreads                maxPoolSize
 | **minSpareThreads** | 25 (200 스레드 기준) | `maxThreads / 8` | 트래픽 유입 전 항상 대기 상태로 유지하는 최소 스레드 수. 요청이 도착하는 즉시 할당할 수 있는 예비 스레드를 확보하여 초기 응답 지연을 방지함 |
 | **acceptCount** | 100 (고정) | -- | 모든 스레드가 처리 중일 때 OS TCP 레벨에서 임시로 대기시키는 최대 요청 수. 이 큐마저 포화되면 후속 요청은 즉시 거부(Connection Refused)되어 상위 프록시가 빠르게 실패를 인지하고 재시도 또는 차단(Backpressure)을 수행함 |
 | **maxConnections** | 8,192 (고정) | -- | NIO 커넥터가 동시에 열어둘 수 있는 총 TCP 소켓의 상한선. 스레드 수보다 크게 설정하는 이유는 NIO가 Keep-Alive 상태의 유휴 소켓을 스레드 할당 없이 메모리에 대기시키기 때문임. 이 한계에 도달하면 후속 연결은 `acceptCount` 대기 큐로 넘어감 |
-| **maxPoolSize (DB)** | 20 ~ 30 | `(DB_Cores * 2) + 여유량` | WAS 인스턴스가 DB와 맺는 상시 TCP 커넥션(HikariCP)의 최대 개수. **WAS 자원이 아닌 DB 서버 스펙 기준으로 독립 산정**함. DB 디스크 I/O 및 메모리 한계를 보호하기 위해 WAS 스레드 수와 무관하게 설정해야 하며, 과다 설정 시 DB Lock 경합 및 전체 TPS 저하를 유발함 |
+| **maxPoolSize (DB)** | 20 | `(DB_Cores * 2) + 여유량` | WAS 인스턴스가 DB와 맺는 상시 TCP 커넥션(HikariCP)의 최대 개수. **WAS 자원이 아닌 DB 서버 스펙 기준으로 독립 산정**함. DB 디스크 I/O 및 메모리 한계를 보호하기 위해 WAS 스레드 수와 무관하게 설정해야 하며, 과다 설정 시 DB Lock 경합 및 전체 TPS 저하를 유발함 |
 
 ### 2.2 인프라 스펙별 표준 설정값 매트릭스
 
@@ -51,9 +51,9 @@ MaxRequestWorkers                maxThreads                maxPoolSize
 | 호스트 RAM | 인스턴스 수 | 인스턴스당 Heap (`Xms=Xmx`) | GC 전략 | 인스턴스당 maxPoolSize |
 |:---|:---:|:---|:---|:---:|
 | **4 GB** | 1 | **2,048m** | **Parallel GC** | 20 |
-| **8 GB** | 2 | **2,560m** | **Parallel GC** | 20 ~ 30 |
-| **16 GB** | 3 | **3,413m** | **Parallel GC** | 20 ~ 30 |
-| **32 GB** | 4 | **5,120m** | **G1 GC** | 30 |
+| **8 GB** | 2 | **2,560m** | **Parallel GC** | 20 |
+| **16 GB** | 3 | **3,413m** | **Parallel GC** | 20 |
+| **32 GB** | 4 | **5,120m** | **G1 GC** | 20 |
 
 #### 2.2.2 Heap 분할 원칙
 
@@ -159,8 +159,8 @@ JAVA_OPTS="-Xms2560m -Xmx2560m \
 <executor id="defaultExecutor" coreThreads="8" maxThreads="200" />
 
 <connectionManager id="defaultConnectionManager"
-                   maxPoolSize="15"
-                   minPoolSize="15"
+                   maxPoolSize="20"
+                   minPoolSize="20"
                    connectionTimeout="30s"
                    maxIdleTime="900s"
                    agedTimeout="1620s"
@@ -170,7 +170,7 @@ JAVA_OPTS="-Xms2560m -Xmx2560m \
 
 **방화벽 임계치(TCP 30분 / 1,800초) 검증 결과 반영**
 
-기존 `maxIdleTime="1800s"`는 방화벽의 TCP 유휴 타임아웃(1800s)과 정확히 일치하여, 방화벽이 커넥션을 Drop하는 시점과 Liberty가 커넥션을 정리하려는 시점 사이에 **Race Condition 구간**이 존재했음. Fixed-size pool (`minPoolSize=15` = `maxPoolSize=15`) 환경에서는 방화벽에 의해 무단 차단된 커넥션이 풀에 잔류하여 애플리케이션 오류를 유발할 수 있음.
+기존 `maxIdleTime="1800s"`는 방화벽의 TCP 유휴 타임아웃(1800s)과 정확히 일치하여, 방화벽이 커넥션을 Drop하는 시점과 Liberty가 커넥션을 정리하려는 시점 사이에 **Race Condition 구간**이 존재했음. Fixed-size pool (`minPoolSize=20` = `maxPoolSize=20`) 환경에서는 방화벽에 의해 무단 차단된 커넥션이 풀에 잔류하여 애플리케이션 오류를 유발할 수 있음.
 
 | 파라미터 | 변경 전 | 변경 후 | 설계 근거 |
 |:---|:---|:---|:---|
@@ -224,8 +224,8 @@ JAVA_OPTS="-Xms2560m -Xmx2560m \
 | **tcp_max_syn_backlog** | `4,096` | `4,096` | `4,096` | `4,096` | `1,024` | SYN 수신 후 ACK 대기 중인 반개방(Half-Open) 연결의 SYN Queue 상한. **somaxconn과 반드시 동일하게 설정**: 커널이 `min(tcp_max_syn_backlog, somaxconn)`을 실제 크기로 사용하므로, 어느 한쪽이 작으면 그 값이 병목이 됨 |
 | **somaxconn** | `4,096` | `4,096` | `4,096` | `4,096` | `4096` (kernel 5.4+) | 3-way handshake 완료 후 accept() 대기열(Accept Queue) 상한. 트래픽 스파이크 시 OS 관문에서 패킷 Drop 방지. kernel 5.4+ 기본값과 동일 |
 | **fs.file-max** | `2,097,152` | `2,097,152` | `2,097,152` | `2,097,152` | 메모리 비례 자동 산정 | 시스템 전체 파일 디스크립터 상한. 모든 소켓 통신이 파일로 취급되어 대규모 동시 접속 시 Too many open files 방지. 미사용 시 메모리 비용이 0이므로 공통 높게 설정 |
-| **ulimit -n** | `1,048,576` | `1,048,576` | `64,000` 이상 | `1,048,576` | `1,024` | 프로세스당 FD 한도. Mongo는 공식 최소 64,000. 나머지는 1M. `infinity` 설정 시 커널이 FD 테이블용 ~8.6GB 할당하여 시스템 불안정 유발 (Red Hat Kernel Bug 2394600) |
-| **ulimit -u** | `65,536` | `65,536` | `64,000` 이상 | `65,536` | `4,096` | 프로세스/스레드 수 상한. `unlimited` 시 Fork Bomb에 무방비. Mongo 공식 권장 64,000. JVM 스레드당 ~1MB 스택을 고려하면 물리적 한계가 자연스러운 절대 상한 역할 |
+| **ulimit -n** | `1,048,576` | `1,048,576` | `1,048,576` | `1,048,576` | `1,024` | 프로세스당 FD 한도. 모든 서버 1M 통일. `infinity` 설정 시 커널이 FD 테이블용 ~8.6GB 할당하여 시스템 불안정 유발 (Red Hat Kernel Bug 2394600) |
+| **ulimit -u** | `65,536` | `65,536` | `65,536` | `65,536` | `4,096` | 프로세스/스레드 수 상한. `unlimited` 시 Fork Bomb에 무방비. JVM 스레드당 ~1MB 스택을 고려하면 물리적 한계가 자연스러운 절대 상한 역할 |
 | **ulimit -f / -t** | unlimited | unlimited | `unlimited` | unlimited | `unlimited` | 파일 크기 및 CPU 시간 제한. Mongo는 대용량 데이터 처리 중 파일 크기 제한 도달 시 데이터 손상 위험으로 공식 명시적 설정 권장 |
 | **vm.min_free_kbytes** | — | `102400` | — | — | 자동 산정 (`4×√(RAM_KB)`) | 커널이 항상 확보하는 최소 여유 RAM. PG 대량 정렬/해시조인 시 메모리 급할 때 Direct Reclaim(전체 프로세스 일시정지) 방지. 100MB 예약 |
 | **vm.zone_reclaim_mode** | — | `0` | — | — | `0` | NUMA 환경에서 다른 노드 메모리 회수 금지. PG는 여러 백엔드가 shared_buffers 공유 접근 → NUMA 노드 간 회수 시 성능 급감. 기본값과 동일하나 설정 누락 방지를 위해 명시적 적용 |
@@ -254,6 +254,23 @@ net.ipv4.tcp_keepalive_probes = 5
 *  soft  nproc   65536
 *  hard  nproc   65536
 ```
+
+> **systemd 서비스 필수 추가 설정**: 위 limits.conf는 PAM 기반 세션 접속에만 적용되며, **systemd가 관리하는 서비스 데몬(tomcat, postgresql, pgpool, mongod 등)에는 적용되지 않음** (Red Hat 공식: "Limits set in limits.conf are ignored by systemd"). 각 서비스별로 아래와 같이 systemd drop-in override 파일을 추가로 생성해야 함.
+>
+> ```ini
+> # /etc/systemd/system/<service-name>.service.d/override.conf
+> [Service]
+> LimitNOFILE=1048576
+> LimitNPROC=65536
+> # MongoDB 서버의 경우 추가:
+> # LimitFSIZE=infinity
+> # LimitCPU=infinity
+> ```
+>
+> ```bash
+> systemctl daemon-reload
+> systemctl restart <service-name>
+> ```
 
 | 파라미터 | 값 | 역할 |
 |:---|:---|:---|
@@ -303,9 +320,15 @@ vm.zone_reclaim_mode = 0
 ```
 
 ```bash
-# Transparent Huge Pages 비활성화 (PostgreSQL 필수)
-echo never > /sys/kernel/mm/transparent_hugepage/enabled
-echo never > /sys/kernel/mm/transparent_hugepage/defrag
+# THP (Transparent Huge Pages) 비활성화 -- OS 리부팅 시 초기화되는 1회성 명령임.
+# 영구 설정은 root 권한이 필요하므로 IT ONE을 통해 IT 운영실에 변경 요청할 것.
+#
+# [참고: 영구 설정 방법 -- IT 운영실 적용용]
+# 방법 1 (권장): GRUB 커널 파라미터 (리부팅 필요)
+#   grubby --update-kernel=ALL --args="transparent_hugepage=never"
+#
+# 방법 2: TuneD 프로파일
+#   /etc/tuned/<profile>/tuned.conf 에 [vm] transparent_hugepages=never 설정
 ```
 
 | 파라미터 | 값 | 역할 |
@@ -332,17 +355,23 @@ vm.dirty_ratio = 15
 ```
 
 ```bash
-# Transparent Huge Pages 활성화 (MongoDB 8.0+ 필수)
-echo always > /sys/kernel/mm/transparent_hugepage/enabled
-echo defer+madvise > /sys/kernel/mm/transparent_hugepage/defrag
+# THP (Transparent Huge Pages) 활성화 -- OS 리부팅 시 초기화되는 1회성 명령임.
+# 영구 설정은 root 권한이 필요하므로 IT ONE을 통해 IT 운영실에 변경 요청할 것.
+#
+# [참고: 영구 설정 방법 -- IT 운영실 적용용]
+# 방법 1 (권장): GRUB 커널 파라미터 (리부팅 필요)
+#   grubby --update-kernel=ALL --args="transparent_hugepage=always"
+#
+# 방법 2: TuneD 프로파일
+#   /etc/tuned/<profile>/tuned.conf 에 [vm] transparent_hugepages=always 설정
 ```
 
 ```bash
 # /etc/security/limits.d/99-mongodb.conf -- MongoDB ulimit
-mongod  soft  nofile   64000
-mongod  hard  nofile   64000
-mongod  soft  nproc    64000
-mongod  hard  nproc    64000
+mongod  soft  nofile   1048576
+mongod  hard  nofile   1048576
+mongod  soft  nproc    65536
+mongod  hard  nproc    65536
 mongod  soft  fsize    unlimited
 mongod  hard  fsize    unlimited
 mongod  soft  cpu      unlimited
@@ -356,7 +385,7 @@ mongod  hard  cpu      unlimited
 | **Transparent Huge Pages** | **enabled** (`always`) | MongoDB 8.0부터 TCMalloc per-CPU 캐시가 THP를 활용하여 성능을 향상시킴. 7.0 이하에서는 비활성화가 권장이었으나, **8.0부터는 방향이 전환**되어 활성화가 필수. PostgreSQL(disabled)과 **정반대** (MongoDB 8.2 TCMalloc Performance 공식 문서) |
 | **vm.dirty_background_ratio** | `5` | 더티 페이지가 5% 도달 시 백그라운드 플러시 시작. 기본값보다 낮추어 WiredTiger의 체크포인트와 커널 플러시가 충돌하는 I/O 버스트를 완화 |
 | **vm.dirty_ratio** | `15` | 동기 플러시 임계치. PostgreSQL(10)보다 높게 설정하는 이유는 WiredTiger가 자체적으로 쓰기 스케줄링을 수행하므로, 커널의 동기 플러시 개입을 조금 더 늦추어 I/O 패턴을 안정화 |
-| **ulimit -n** (nofile) | `64,000` 이상 | MongoDB 공식 최소 요구사항. 이 값 미만 시 기동 경고(Startup Warning) 발생 |
+| **ulimit -n** (nofile) | `1,048,576` | 모든 서버 공통값 (MongoDB 공식 최소 64,000 이상 충족) |
 | **ulimit -f / -t** | `unlimited` | 파일 크기 및 CPU 시간 제한 해제. 대용량 데이터 처리 중 파일 크기 제한 도달 시 데이터 손상 위험 (MongoDB 공식 ulimit 권장) |
 
 ---
@@ -448,7 +477,7 @@ graph LR
 | **child_life_time** | `1,680` (28min) | PgPool child 프로세스의 최대 생존 시간(초). DB `idle_session_timeout`(30min)보다 짧게 설정하여 DB 측 강제 종료 전에 PgPool이 먼저 프로세스를 회수하도록 타임아웃 캐스케이드를 유지함 |
 | **connection_life_time** | `1,680` (28min) | PgPool → PostgreSQL 백엔드 연결의 최대 수명(초). DB 세션 타임아웃(30min)보다 짧게 설정하여 DB 또는 방화벽에 의한 강제 차단 전에 연결을 안전하게 갱신함 |
 | **client_idle_limit** | `600` (10min) | 클라이언트(WAS)가 아무런 요청 없이 유휴 상태로 머무는 최대 시간(초). 이 시간을 초과하면 PgPool이 해당 클라이언트 연결을 강제 종료하여 좀비 커넥션이 PgPool 프로세스를 점유하는 것을 방지함 |
-| **reserved_connections** | `1~2` | PgPool 관리자 접속을 위한 예약 슬롯. 장애 발생 시 DBA가 PgPool에 접속할 수 없는 상황을 방지함. `num_init_children`에 포함되지 않는 별도 예약 공간임 |
+| **reserved_connections** | `1` | PgPool 관리자 접속을 위한 예약 슬롯. 장애 발생 시 DBA가 PgPool에 접속할 수 없는 상황을 방지함. `num_init_children`에 포함되지 않는 별도 예약 공간임 |
 | **load_balance_mode** | `on` | 읽기 쿼리(SELECT)를 Replica 노드로 자동 분산하는 기능. PgPool이 SQL을 분석하여 SELECT 문은 `backend_weight` 비율에 따라 분산 라우팅하고, 그 외(INSERT/UPDATE/DELETE)는 항상 Primary로 라우팅함 |
 | **backend_clustering_mode** | `'streaming_replication'` | PgPool-II v4.x+의 스트리밍 복제 모드 설정. 기존 `master_slave_mode`는 폐지되었으므로 v4.x 이상에서는 반드시 이 값을 사용해야 함 |
 | **backend_weight0 / weight1** | Primary `1` / Replica `3` | 읽기 쿼리 분산 비율. Primary는 모든 쓰기 트랜잭션(INSERT/UPDATE/DELETE) 및 MVCC 가비지 관리(VACUUM) 부하를 전담하므로, 읽기 부하까지 동등하게 분배(1:1)하면 Primary의 자원이 과부하 상태가 될 수 있음. Primary의 가중치를 낮추고 Replica에 읽기 부하를 집중시키는 차등 구성(1:3)으로 Primary의 자원을 쓰기 트랜잭션 격리 및 정합성 보장에 집중시킴. 비율 산출 근거: Primary 1 : Replica 3 = SELECT 쿼리의 약 25%는 Primary, 약 75%는 Replica로 분산됨 |
@@ -633,7 +662,7 @@ graph LR
 | **readPreference** | 서비스 특성에 따라 (아래 표 참조) | 클라이언트가 어느 노드(Primary 또는 Secondary)에서 데이터를 읽을지를 결정하는 설정. 읽기 부하 분산과 데이터 최신성 간의 트레이드오프를 제어함 |
 | **Profiling Level** | `1 (slowms: 100)` | 슬로우 쿼리 및 COLLSCAN(컬렉션 스캔)을 감지하기 위한 프로파일링 수준. Level 1은 100ms 이상 소요된 연산만 기록함. COLLSCAN은 인덱스가 없어 전체 도큐먼트를 순회하는 비효율적 쿼리 패턴으로, 프로덕션에서 발생 시 즉시 인덱스 추가가 필요함 |
 | **electionTimeoutMillis** | `10000` (10s, 기본값) | Secondary 노드가 Primary로부터 하트비트 신호를 받지 못했을 때, Primary 장애로 판단하고 새 Primary 선거(Election)를 시작하기까지 대기하는 시간. 너무 짧으면 네트워크 일시 지연에도 불필요한 페일오버가 발생하고, 너무 길면 실제 장애 시 복구가 지연됨 |
-| **defaultMaxTimeMS** | 권장: `30000~60000` | **MongoDB 8.0 신규** 파라미터. 개별 읽기 연산의 기본 시간 제한(ms). 장기 실행 쿼리가 무한정 실행되어 서버 자원을 독점하는 것을 방지함 |
+| **defaultMaxTimeMS** | 권장: `60000` | **MongoDB 8.0 신규** 파라미터. 개별 읽기 연산의 기본 시간 제한(ms). 장기 실행 쿼리가 무한정 실행되어 서버 자원을 독점하는 것을 방지함 |
 | **maxIncomingConnections** | RAM별 차등 (1,000~10,000) | MongoDB가 수용할 최대 동시 클라이언트 연결 수. MongoDB는 커넥션당 1개 스레드를 할당하며, Linux 스레드 스택은 기본 1MB이므로 커넥션 수에 비례하여 메모리 소모 (예: 5,000커넥션 ≈ 5GB). 기본값(65536)은 소형 서버에서 OOM 유발 위험이 있으므로 RAM 용량에 따라 명시적 상한 설정이 필수임. WAS 30대 × 100풀 = 3,000이므로, 상용 환경에서는 최소 5,000 이상 권장 |
 | **internalQueryExecMaxBlockingSortBytes** | RAM별 차등 (32~256 MB) | 인덱스가 없는 필드에 대한 블로킹 정렬(Blocking Sort, 인메모리 정렬) 시 세션당 허용하는 최대 메모리 바이트 상한선. PostgreSQL의 `work_mem`과 유사한 개념. 악성 쿼리 1개가 시스템 전체 메모리를 고갈시키지 않도록 격리하되, 대규모 상용 척력(32G~64G)에서는 정상 대용량 쿼리가 제한에 걸려 실패하는 현상을 방지하기 위해 가용 마진 내에서 배수 상향 조정함 |
 
@@ -994,10 +1023,10 @@ WAS → PgPool 계층:
 | 팀 / 서비스 | 현행 Java | 현행 풀 설정 | **최종 확정 maxPoolSize** | 보정 사유 |
 |:---|:---:|:---:|:---:|:---|
 | **플랫폼개발 (Nice Park)** | 17 | 5 | **20** | 기존 풀 과소 설정으로 인한 처리량 병목 개선 |
-| **플랫폼개발 (Nice Charger)** | 15, 25 | 100 / 20 | **20 ~ 30** | 웹 풀 100을 20~30으로 축소 (공유 DB 보호) |
-| **CL플랫폼 (CLS 전용)** | 15.0.2 | 50 | **15** | 현금정보계와 동일 서버 사용. 인스턴스당 15로 제한 |
-| **주차서비스 (Tomcat 9.x)** | 15.0.2 | 100 | **20 ~ 30** | 과대 설정 축소 (공유 DB 리소스 고갈 방지) |
-| **현금정보계 (Liberty 23.x)** | 15.0.2 | 50 | **15** | 7개 컨테이너 다중화 환경. 컨테이너당 15 (총 7 x 15 = 105) |
+| **플랫폼개발 (Nice Charger)** | 15, 25 | 100 / 20 | **20** | 웹 풀 100을 20으로 축소 (공유 DB 보호) |
+| **CL플랫폼 (CLS 전용)** | 15.0.2 | 50 | **20** | 현금정보계와 동일 서버 사용. 인스턴스당 20으로 통일 |
+| **주차서비스 (Tomcat 9.x)** | 15.0.2 | 100 | **20** | 과대 설정 축소 (공유 DB 리소스 고갈 방지) |
+| **현금정보계 (Liberty 23.x)** | 15.0.2 | 50 | **20** | 7개 컨테이너 다중화 환경. 컨테이너당 20 (총 7 x 20 = 140) |
 
 > **CL플랫폼 및 현금정보계 적용 전 필수 검증**: `maxPoolSize` 축소 적용 전, APM 모니터링을 통해 실제 피크 타임의 **Active Connection Peak 수치를 반드시 검증**해야 하며, 커넥션 고갈 우려 시 **WAS 인스턴스 스케일 아웃을 병행**해야 함.
 
@@ -1018,7 +1047,7 @@ WAS → PgPool 계층:
 
 | 아키텍처 | 커넥션 풀 계층 | WAS 설정 | 중간 계층 | DB 설정 |
 |:---|:---|:---|:---|:---|
-| **PG Standalone** (개발/테스트) | WAS → PG | HikariCP maxPoolSize=15~30 | 없음 | max_conn = 100 고정 |
+| **PG Standalone** (개발/테스트) | WAS → PG | HikariCP maxPoolSize=20 | 없음 | max_conn = 100 고정 |
 | **PG PgPool+SR** (프로덕션) | WAS → PgPool → PG | HikariCP maxPoolSize=20~25 | PgPool num_init_children = 120 (DBA 운영 권장, 연결 풀링으로 백엔드 100 이하 유지) | max_conn = 100 고정 |
 | **MongoDB RS** (프로덕션) | WAS → RS | maxPoolSize=20~50 (MongoDB Driver) | 없음 | maxIncomingConnections=RAM별 차등 (1,000~10,000) |
 
@@ -1094,7 +1123,7 @@ WAS → PgPool 계층:
 | `Xms` = `Xmx` | 프로덕션에서 반드시 동일하게 설정 | Heap 리사이즈 시 GC Pause 발생 |
 | Heap < Container RAM * 0.7 | OOM 방지 | Metaspace, Thread Stack, Native Memory 부족 |
 | 인스턴스당 Heap = 호스트 RAM * 0.625 / N | 다중 인스턴스 분할 원칙 | 단일 인스턴스가 호스트 RAM 과점유 |
-| `maxPoolSize` <= 30 (기본) | 인스턴스당 기본 표준 준수 | DB 리소스 고갈, Lock 경합 |
+| `maxPoolSize` = 20 | 인스턴스당 기본 표준 준수 | DB 리소스 고갈, Lock 경합 |
 | Sum(`maxPoolSize`) <= DB `max_conn` * 0.7 | 공유 DB 70% Ceiling Rule | 타 서비스 커넥션 고갈, 장애 전파 |
 | `minimumIdle` = `maxPoolSize` | Fixed-size pool 유지 | 풀 축소/확장 오버헤드 발생 |
 | `ProxyPass ttl` < WAS `keepAliveTimeout` | 프록시 레이스 컨디션 방지 | 간헐적 502/503 에러 발생 |
@@ -1105,6 +1134,7 @@ WAS → PgPool 계층:
 | `leakDetectionThreshold` 활성화 | 권장값 **60,000ms** | 커넥션 누수 무감지 |
 | `vm.swappiness` = 10 (WAS 서버) | JVM 환경 안정성 | 기본값(60) 시 GC Pause 빈발 |
 | `ip_local_port_range` = 32768~65535 (WAS 서버) | 아웃바운드 포트 확보 | 포트 고갈 시 커넥션 실패 |
+| systemd 서비스 LimitNOFILE/LimitNPROC override 설정 | 서비스 데몬 ulimit 적용 | limits.conf 무시되어 기본값 1024로 동작 |
 
 ### 7.2 PostgreSQL (PgPool+SR) 검증 항목
 
@@ -1117,6 +1147,8 @@ WAS → PgPool 계층:
 | `vm.overcommit_memory` = 2 (PostgreSQL 서버) | OOM Killer 방지 | postmaster 강제 종료 → 전체 장애 |
 | `vm.overcommit_ratio` = 90 (PostgreSQL 서버) | overcommit_memory=2 시 커밋 한도 보장 | 기본 50% → "Cannot allocate memory" 장애 |
 | THP = disabled (PostgreSQL 서버) | OLTP 지연 스파이크 방지 | 간헐적 수백 ms 쿼리 지연 |
+| THP 영구 설정 적용 (PostgreSQL 서버) | IT ONE 변경 요청 완료 | 리부팅 후 THP 활성화로 성능 저하 |
+| systemd 서비스 LimitNOFILE/LimitNPROC override 설정 | 서비스 데몬 ulimit 적용 | limits.conf 무시되어 기본값으로 동작 |
 | `autovacuum` = on | 필수 | Dead Tuple 누적, 성능 점진 저하 |
 | `autovacuum_vacuum_cost_limit` >= 1000 | 기본값(200) 대비 상향 | VACUUM 처리 지연 |
 | `idle_in_transaction_session_timeout` 설정 | 교착 방지 | Lock 점유로 인한 전파 장애 |
@@ -1139,7 +1171,9 @@ WAS → PgPool 계층:
 | Cache Hit Ratio >= 95% | `db.serverStatus().wiredTiger.cache` | 디스크 I/O 증가, 성능 저하 |
 | `vm.swappiness` = 1 (MongoDB 서버) | DB 서버 안정성 | 스와핑 시 캐시 성능 급감 |
 | THP = enabled (MongoDB 8.0+ 서버) | TCMalloc per-CPU 성능 | per-CPU 캐시 비활성화로 성능 저하 |
-| `ulimit -n` >= 64000 (MongoDB 서버) | MongoDB 공식 최소 | 기동 경고, 커넥션 제한 |
+| `ulimit -n` = 1048576 (MongoDB 서버) | 모든 서버 공통 | 기동 경고, 커넥션 제한 |
+| THP 영구 설정 적용 (MongoDB 서버) | IT ONE 변경 요청 완료 | 리부팅 후 THP 비활성화로 성능 저하 |
+| systemd 서비스 LimitNOFILE/LimitNPROC/LimitFSIZE/LimitCPU override 설정 | 서비스 데몬 ulimit 적용 | limits.conf 무시되어 기본값으로 동작 |
 
 ---
 

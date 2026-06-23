@@ -1,0 +1,20 @@
+{
+	"folders": [
+		{
+			"path": "../../frontend/server-spec"
+		},
+		{
+			"path": "../../frontend/server-spec-v2"
+		},
+		{
+			"path": "."
+		},
+		{
+			"path": "../was-webserver"
+		},
+		{
+			"path": "../webwas"
+		}
+	],
+	"settings": {}
+}

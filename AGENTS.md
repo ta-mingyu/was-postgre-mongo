@@ -35,6 +35,13 @@ graph TD
 
 - [인프라 표준 설정 규정 (확정본)](./reports/final-standard-guide.md) -- WAS + DB 통합 확정 배포본 (IT기획실 → 전 사업팀)
 
+### 서버별 실무 배포 가이드 (운영자용)
+
+- [WAS 서버 설정 가이드](./reports/final/was.md) -- OS 커널 + Tomcat/Spring Boot/WebSphere 설정 + HikariCP + 체크리스트
+- [PostgreSQL 서버 설정 가이드](./reports/final/postgresql.md) -- OS 커널 + PgPool+SR/Standalone + 타임아웃 Guardrails + 체크리스트
+- [PgPool-II 서버 설정 가이드](./reports/final/pgpool-ii.md) -- OS 커널 + 커넥션 풀링/로드밸런싱/페일오버 + 체크리스트
+- [MongoDB 서버 설정 가이드](./reports/final/mongodb.md) -- OS 커널 + Replica Set PSS/Standalone + Write Concern + 체크리스트
+
 ### WAS Domain (참조용)
 
 - [WAS Standard Guide V3](./reports/was-standard-guide-v3.md) -- WAS 개별 가이드 최신본 (참조용)

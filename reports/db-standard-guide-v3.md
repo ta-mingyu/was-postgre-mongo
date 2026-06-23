@@ -262,7 +262,7 @@ graph LR
 | [중간] | **child_life_time** | `1,680` (28min) | DB idle_session_timeout(30min)보다 짧게 |
 | [중간] | **connection_life_time** | `1,680` (28min) | PgPool -> DB 연결 수명 |
 | [중간] | **client_idle_limit** | `600` (10min) | 클라이언트 유휴 타임아웃 |
-| [높음] | **reserved_connections** | `1~2` | PgPool 관리용 예약 슬롯 |
+| [높음] | **reserved_connections** | `1` | PgPool 관리용 예약 슬롯 |
 | [높음] | **load_balance_mode** | `on` | 읽기 분산 활성화 |
 | [높음] | **backend_clustering_mode** | `'streaming_replication'` | PgPool-II v4.x+ 스트리밍 복제 모드 (기존 master_slave_mode 폐지) |
 
@@ -452,7 +452,7 @@ graph LR
 | [중간] | **readPreference** | 서비스 특성에 따라 (아래 표 참조) | Primary vs Secondary 읽기 |
 | [높음] | **Profiling Level** | `1 (slowms: 100)` | COLLSCAN 감지 필수 |
 | [높음] | **electionTimeoutMillis** | `10000` (10s, 기본값) | Primary 장애 감지 타임아웃 |
-| [중간] | **defaultMaxTimeMS** | 서비스 특성에 따라 (권장: 30000~60000) | **8.0 신규**. 개별 읽기 연산의 기본 시간 제한(ms). 장기 실행 쿼리 방어 |
+| [중간] | **defaultMaxTimeMS** | 서비스 특성에 따라 (권장: 60000) | **8.0 신규**. 개별 읽기 연산의 기본 시간 제한(ms). 장기 실행 쿼리 방어 |
 
 #### Write Concern / Read Preference 의사결정표
 
@@ -1379,10 +1379,10 @@ db.orders.aggregate([{ $shardedDataDistribution: {} }])
 | 팀 / 서비스 | 사용 DBMS | 현행 주요 설정 | 표준 적용 방향 | 사유 및 보정 방향 |
 | :--- | :--- | :--- | :--- | :--- |
 | **플랫폼개발 (나이스M)** | PostgreSQL (via PgPool-II) + MongoDB | PgPool 경유, R:W=7:3 | 인스턴스당 **maxPoolSize=20** | PostgreSQL + MongoDB 둘 다 사용. 읽기 비중 높으므로 Replica 읽기 분산 필수 |
-| **플랫폼개발 (나이스차저)** | MongoDB | P1/S2/A0, R:W=6:4 | 인스턴스당 **maxPoolSize=20~30**. **Profiling Level 1 즉시 활성화** | MongoDB만 사용. COLLSCAN 무감지 상태 운영 위험. 정산/결제 서비스는 `primary` 유지 필수 |
-| **CL플랫폼** | DB2 | 현행 50 | 인스턴스당 **maxPoolSize=15** | 현금정보계와 같은 서버 사용. 향후 신규 서비스 도입 시 공유 환경 합류 대비 |
-| **주차서비스** | DB2 | 현행 100 | 인스턴스당 **maxPoolSize=20~30** | 독립 DB2 환경. 과대 설정 축소 보정 |
-| **현금정보계** | DB2 | 7개 컨테이너, maxPoolSize=50 | 인스턴스당 **maxPoolSize=15** (총 105) | 7개 컨테이너 다중화 환경. 향후 신규 서비스 도입 시 공유 환경 합류 대비 |
+| **플랫폼개발 (나이스차저)** | MongoDB | P1/S2/A0, R:W=6:4 | 인스턴스당 **maxPoolSize=20**. **Profiling Level 1 즉시 활성화** | MongoDB만 사용. COLLSCAN 무감지 상태 운영 위험. 정산/결제 서비스는 `primary` 유지 필수 |
+| **CL플랫폼** | DB2 | 현행 50 | 인스턴스당 **maxPoolSize=20** | 현금정보계와 같은 서버 사용. 향후 신규 서비스 도입 시 공유 환경 합류 대비 |
+| **주차서비스** | DB2 | 현행 100 | 인스턴스당 **maxPoolSize=20** | 독립 DB2 환경. 과대 설정 축소 보정 |
+| **현금정보계** | DB2 | 7개 컨테이너, maxPoolSize=50 | 인스턴스당 **maxPoolSize=20** (총 105) | 7개 컨테이너 다중화 환경. 향후 신규 서비스 도입 시 공유 환경 합류 대비 |
 
 > **[참고사항]** CL플랫폼 및 현금정보계의 `maxPoolSize` 축소 적용 전, APM 모니터링을 통해 실제 피크 타임의 **Active Connection Peak 수치를 반드시 검증**해야 하며, 커넥션 고갈 우려 시 **WAS 인스턴스 스케일 아웃을 병행**해야 합니다.
 
@@ -1404,10 +1404,10 @@ db.orders.aggregate([{ $shardedDataDistribution: {} }])
 
 | 아키텍처 | 커넥션 풀 계층 | WAS 설정 | 중간 계층 | DB 설정 | 비고 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **PG Standalone** | WAS -> PG | HikariCP maxPoolSize=15~30 | 없음 | max_conn = 100 고정 | 소규모 |
-| **PG SR Only** | WAS -> PG | HikariCP maxPoolSize=15~30 | 없음 | max_conn = 100 고정 | 앱 레벨 읽기 분산 |
+| **PG Standalone** | WAS -> PG | HikariCP maxPoolSize=20 | 없음 | max_conn = 100 고정 | 소규모 |
+| **PG SR Only** | WAS -> PG | HikariCP maxPoolSize=20 | 없음 | max_conn = 100 고정 | 앱 레벨 읽기 분산 |
 | **PG PgPool+SR** | WAS -> PgPool -> PG | HikariCP maxPoolSize=20~25 | PgPool num_init_children >= Sum + 여유 | max_conn = 100 고정 (PgPool 큐잉) | 커넥션 풀링 + 읽기 분산 통합 |
-| **PG Patroni** | WAS -> HAProxy -> PG | HikariCP maxPoolSize=20~30 | HAProxy(라우팅) + PgBouncer(선택) | max_conn = 100 고정 | HAProxy/PgBouncer가 커넥션 관리 |
+| **PG Patroni** | WAS -> HAProxy -> PG | HikariCP maxPoolSize=20 | HAProxy(라우팅) + PgBouncer(선택) | max_conn = 100 고정 | HAProxy/PgBouncer가 커넥션 관리 |
 | **MongoDB RS** | WAS -> RS | maxPoolSize=20~50 (MongoDB Driver) | 없음 | maxIncomingConnections=65536 | Driver가 Primary/Secondary 자동 라우팅 |
 | **MongoDB Sharded** | WAS -> mongos -> Shard | maxPoolSize=20~50 (MongoDB Driver) | mongos(라우팅) | mongos 내부 관리 | mongos 수에 비례하여 WAS 풀 분산 |
 

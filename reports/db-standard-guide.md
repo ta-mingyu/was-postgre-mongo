@@ -40,7 +40,7 @@
 | 중간 | **child_life_time** | `1,800` (30min) | * DB idle_session_timeout(35min)보다 짧게 설정 |
 | 중간 | **connection_life_time** | `1,800` (30min) | * PgPool -> DB 연결 수명 |
 | 중간 | **client_idle_limit** | `600` (10min) | * 클라이언트 유휴 타임아웃 |
-| 높음 | **reserved_connections** | `1 ~ 2` | * PgPool 관리용 예약 슬롯 |
+| 높음 | **reserved_connections** | `1` | * PgPool 관리용 예약 슬롯 |
 
 > **[참고사항]** **[4GB RAM 독립 서버 가이드]** PgPool-II 전용 서버가 4GB RAM 사양이므로, `num_init_children = 120` 구동 시 프로세스 메모리 점유율(약 1GB 내외)은 안정 범위이나, 다중 자식 프로세스의 안정적인 포크(Fork) 및 세션 유지를 위해 OS 커널 세마포어 상한선 설정이 필수이다. Linux `sysctl.conf`에 `kernel.sem = 250 32000 250 128` 설정을 표준화한다.
 
@@ -326,11 +326,11 @@ db.setProfilingLevel(1, { slowms: 100 })
 | 팀 / 서비스 | 사용 DBMS | 현행 주요 설정 | 표준 적용 방향 | 사유 및 보정 방향 |
 | :--- | :--- | :--- | :--- | :--- |
 | **플랫폼개발 (나이스M)** | PostgreSQL (via PgPool-II) + MongoDB | PgPool 경유, R:W=7:3 | 인스턴스당 **maxPoolSize=20** | * PostgreSQL 및 MongoDB 둘 다 사용<br>* 읽기 비중 높으므로 Replica 읽기 분산 필수 |
-| **플랫폼개발 (나이스차저)** | MongoDB | M1/S2/A0, R:W=6:4 | 인스턴스당 **maxPoolSize=20~30**<br>**Profiling Level 1 즉시 활성화** | * MongoDB만 사용 중<br>* COLLSCAN 무감지 상태 운영 위험<br>* 정산/결제 서비스는 `primary` 유지 필수 |
+| **플랫폼개발 (나이스차저)** | MongoDB | M1/S2/A0, R:W=6:4 | 인스턴스당 **maxPoolSize=20**<br>**Profiling Level 1 즉시 활성화** | * MongoDB만 사용 중<br>* COLLSCAN 무감지 상태 운영 위험<br>* 정산/결제 서비스는 `primary` 유지 필수 |
 | |||||
-| **CL플랫폼** | DB2 | 현행 50 | 인스턴스당 **maxPoolSize=15** | * 현금정보계와 같은 서버 사용, 인스턴스당 15로 제한<br>* 향후 신규 서비스 도입 시 공유 환경 합류 대비 선행 표준 적용 |
-| **주차서비스** | DB2 | 현행 100 | 인스턴스당 **maxPoolSize=20~30** | * 독립 DB2 환경으로 타 서비스와 커넥션 경합 없음<br>* 과대 설정 축소 보정 |
-| **현금정보계** | DB2 | 7개 컨테이너, maxPoolSize=50 | 인스턴스당 **maxPoolSize=15** (총 105) | * 7개 컨테이너 다중화 환경 감안 인스턴스당 15로 제한<br>* 향후 신규 서비스 도입 시 공유 환경 합류 대비 선행 표준 적용 |
+| **CL플랫폼** | DB2 | 현행 50 | 인스턴스당 **maxPoolSize=20** | * 현금정보계와 같은 서버 사용, 인스턴스당 20으로 통일<br>* 향후 신규 서비스 도입 시 공유 환경 합류 대비 선행 표준 적용 |
+| **주차서비스** | DB2 | 현행 100 | 인스턴스당 **maxPoolSize=20** | * 독립 DB2 환경으로 타 서비스와 커넥션 경합 없음<br>* 과대 설정 축소 보정 |
+| **현금정보계** | DB2 | 7개 컨테이너, maxPoolSize=50 | 인스턴스당 **maxPoolSize=20** (총 105) | * 7개 컨테이너 다중화 환경 감안 인스턴스당 20으로 통일<br>* 향후 신규 서비스 도입 시 공유 환경 합류 대비 선행 표준 적용 |
 
 > **[참고사항]** CL플랫폼 및 현금정보계의 `maxPoolSize`를 50에서 15로 축소 제안한 사항에 대하여, 풀 크기 축소 적용 전 APM 모니터링을 통해 실제 피크 타임의 **Active Connection Peak 수치를 반드시 검증**해야 하며, 커넥션 고갈 우려 시 **WAS 인스턴스의 스케일 아웃(Scale-out)을 병행**해야 합니다.
 

@@ -27,7 +27,7 @@
 - [x] 가이드라인 문서 구조 설계 (Apache 가이드 구조 차용)
 - [x] Anti-Pattern 분석: 선형 비례 1/4 규칙의 실패 메커니즘 정리
 - [x] Thread 설정: CPU 코어 수 기반 산정 (maxThreads = min(CPU_cores * 50, 500))
-- [x] DB Connection Pool: HikariCP 공식 기반 산정 (인스턴스당 20~30)
+- [x] DB Connection Pool: HikariCP 공식 기반 산정 (인스턴스당 20)
 - [x] 스케일 아웃 전략: 단일 호스트 RAM 분할 원칙 (4/8/16/32GB 매트릭스)
 - [x] 공유 DB 환경 커넥션 풀 분할 원칙 (70% Ceiling Rule, Tier별 쿼터 할당)
 - [x] JVM 메모리 설정: 인스턴스당 Heap 분할 매트릭스

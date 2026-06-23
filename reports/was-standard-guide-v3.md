@@ -38,9 +38,9 @@ MaxRequestWorkers                maxThreads                maxPoolSize
 | 호스트 RAM | 인스턴스 수 | 인스턴스당 Heap (`Xms=Xmx`) | GC 전략 | 인스턴스당 maxPoolSize |
 | :--- | :---: | :--- | :--- | :---: |
 | **4 GB** | 1 | **2,048m** | **Parallel GC** (`-XX:+UseParallelGC`) | 20 |
-| **8 GB** | 2 | **2,560m** | **Parallel GC** (`-XX:+UseParallelGC`) | 20 ~ 30 |
-| **16 GB** | 3 | **3,413m** | **Parallel GC** (`-XX:+UseParallelGC`) | 20 ~ 30 |
-| **32 GB** | 4 | **5,120m** | **G1 GC** (`-XX:+UseG1GC`) | 30 |
+| **8 GB** | 2 | **2,560m** | **Parallel GC** (`-XX:+UseParallelGC`) | 20 |
+| **16 GB** | 3 | **3,413m** | **Parallel GC** (`-XX:+UseParallelGC`) | 20 |
+| **32 GB** | 4 | **5,120m** | **G1 GC** (`-XX:+UseG1GC`) | 20 |
 
 ### 2.2 Metaspace 공통 설정 및 Heap 분할 원칙
 
@@ -265,8 +265,8 @@ JAVA_OPTS="-Xms2560m -Xmx2560m \
 <executor id="defaultExecutor" coreThreads="8" maxThreads="200" />
 
 <connectionManager id="defaultConnectionManager"
-                   maxPoolSize="15"
-                   minPoolSize="15"
+                   maxPoolSize="20"
+                   minPoolSize="20"
                    connectionTimeout="30s"
                    maxIdleTime="900s"
                    agedTimeout="1620s"
@@ -279,7 +279,7 @@ JAVA_OPTS="-Xms2560m -Xmx2560m \
 > 기존 `maxIdleTime="1800s"`는 방화벽의 TCP 유휴 타임아웃(1800초)과 정확히 일치하여,
 > 방화벽이 커넥션을 Drop하는 시점과 Liberty가 커넥션을 정리하려는 시점 사이에
 > **Race Condition 구간**이 존재했음.
-> Fixed-size pool (`minPoolSize=15` = `maxPoolSize=15`) 환경에서는
+> Fixed-size pool (`minPoolSize=20` = `maxPoolSize=20`) 환경에서는
 > 방화벽에 의해 무단 차단된 커넥션이 풀에 잔류하여 애플리케이션 오류를 유발할 수 있음.
 
 | 파라미터 | 변경 전 | 변경 후 | 설계 근거 |
@@ -344,10 +344,10 @@ DB max_connections = 1,000 (DB 서버 설정)
 | 팀 / 서비스 | 현행 Java | 마이그레이션 목표 | 현행 풀 설정 | **최종 확정 maxPoolSize** | 보정 사유 |
 | :--- | :---: | :---: | :---: | :---: | :--- |
 | **플랫폼개발 (Nice Park)** | 17 | **현행 유지** | 5 | **20** | 기존 풀 과소 설정으로 인한 처리량 병목 개선 |
-| **플랫폼개발 (Nice Charger)** | 15, 25 | **현행 유지** | 100 / 20 | **20 ~ 30** | 웹 풀 100을 20~30으로 축소 (공유 DB 보호) |
-| **CL플랫폼 (CLS 전용)** | 15.0.2 | **현행 유지** | 50 | **15** | 현금정보계와 동일 서버 사용. 인스턴스당 15로 제한. `maxThreads=200` 적용 |
-| **주차서비스 (Tomcat 9.x)** | 15.0.2 | **현행 유지** | 100 | **20 ~ 30** | 과대 설정 축소 (공유 DB 리소스 고갈 방지) |
-| **현금정보계 (Liberty 23.x)** | 15.0.2 | **현행 유지** | 50 | **15** | 7개 컨테이너 다중화 환경. 컨테이너당 15 (총 7 x 15 = 105) |
+| **플랫폼개발 (Nice Charger)** | 15, 25 | **현행 유지** | 100 / 20 | **20** | 웹 풀 100을 20으로 축소 (공유 DB 보호) |
+| **CL플랫폼 (CLS 전용)** | 15.0.2 | **현행 유지** | 50 | **20** | 현금정보계와 동일 서버 사용. 인스턴스당 20으로 통일. `maxThreads=200` 적용 |
+| **주차서비스 (Tomcat 9.x)** | 15.0.2 | **현행 유지** | 100 | **20** | 과대 설정 축소 (공유 DB 리소스 고갈 방지) |
+| **현금정보계 (Liberty 23.x)** | 15.0.2 | **현행 유지** | 50 | **20** | 7개 컨테이너 다중화 환경. 컨테이너당 20 (총 7 x 20 = 140) |
 
 ### 5.3 Java 버전 마이그레이션 정책
 
@@ -440,7 +440,7 @@ ulimit -u 4096           # max processes (= threads)
 | `Xms` = `Xmx` | 프로덕션에서 반드시 동일하게 설정 | Heap 리사이즈 시 GC Pause 발생 |
 | Heap < Container RAM * 0.7 | OOM 방지 | Metaspace, Thread Stack, Native Memory 부족 |
 | 인스턴스당 Heap = 호스트 RAM * 0.625 / N | 다중 인스턴스 분할 원칙 | 단일 인스턴스가 호스트 RAM 과점유 |
-| `maxPoolSize` <= 30 (기본) | 인스턴스당 기본 표준 준수 | DB 리소스 고갈, Lock 경합 |
+| `maxPoolSize` = 20 | 인스턴스당 기본 표준 준수 | DB 리소스 고갈, Lock 경합 |
 | Sum(`maxPoolSize`) <= DB `max_conn` * 0.7 | 공유 DB 70% Ceiling Rule | 타 서비스 커넥션 고갈, 장애 전파 |
 | `maxLifetime` < 각 DB별 유휴 세션 제한값 | 커넥션 무효화 방지 | DB 또는 방화벽이 먼저 연결을 강제 종료하여 애플리케이션 단에서 커넥션 단절 예외(Connection reset) 발생. (PG: `idle_session_timeout`, Mongo: `localLogicalSessionTimeoutMinutes`, DB2: `CONNECTIONIDLETIME` 규격 준수 확인) |
 | `ProxyPass ttl` < WAS `keepAliveTimeout` | 프록시 레이스 컨디션 방지 | 간헐적 502/503 에러 발생 |
