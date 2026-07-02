@@ -16,11 +16,21 @@
 ## Phase 2: Harness 파일 구조 개선 [Completed]
 
 - [x] `harness/ppt-structure-spec.md` (480행) 파트별 분할
-  - [x] `harness/ppt-outline.md` -- PPT 아웃라인 + 발표 스크립트
+  - [x] `harness/ppt-outline.md` -- PPT 아웃라인 + 발표 스크립트 (후속 PPT 제거 시 함께 삭제)
   - [x] `harness/vendor-research.md` -- 벤더 리서치 + 표준값
 - [x] 원본 `harness/ppt-structure-spec.md` 삭제
-- [x] `harness/agent-context.md` 업데이트 (프로젝트 확장 반영)
+- [x] `harness/agent-context.md` 업데이트 (프로젝트 확장 반영) -- 이후 Phase 6 재구성 시 분산/삭제
 - [x] `AGENTS.md` 업데이트 (신규 소스, 확장 로드맵, harness 분할 인덱스)
+
+## Phase 6: 지시체계 init-project 규격 재구성 [Completed]
+
+- [x] `AGENTS.md` 본문 -> `harness/` 이전, 목차(Index) 전용화
+- [x] harness/ 표준 핵심 파일 6종 생성 (overview/structure/commands/conventions/workflow/gotchas)
+- [x] `harness/team-profiles.md` 신규 (팀 메타데이터 정규화, agent-context §2 이관)
+- [x] `harness/agent-context.md` 내용 분산(overview/team-profiles/workflow/gotchas) 후 삭제
+- [x] 도메인 rules(was/postgresql/mongodb) + vendor-research + webserver-standard-guide 보존
+- [x] 프로젝트 스킬 2종 생성: `.opencode/skills/{update-guide,gap-analysis}/SKILL.md`
+- [x] 프로젝트 스킬 추가: `.opencode/skills/verify-standards/SKILL.md` (reports 변화 시 최신 자료 리서치 기반 표준값 시효성 검증)
 
 ## Phase 3: WAS Server 표준 가이드라인 작성 [In Progress]
 
@@ -71,3 +81,27 @@
 ## Phase 5: MongoDB RAM/코어별 매트릭스 테이블 상세 수치 보완 [Pending]
 
 - [ ] MongoDB RAM/코어별 매트릭스 테이블 상세 수치 보완
+
+## Phase 7: TA 기본 소양 학습 문서 작성 [Completed]
+
+- [x] `study/` 폴더 신설 + README(커리큘럼 인덱스 + 학습 경로 + 불변량 지도)
+- [x] 01 Linux 커널/ulimit (page cache/fd/overcommit/THP/TCP, 서버 역할별 차이)
+- [x] 02 WAS/JVM (GC 분기 Parallel/G1/ZGC, Heap 분할, 스레드/풀 경제학)
+- [x] 03 PostgreSQL 내부 (MVCC/WAL/double buffering/4종 타임아웃/플래너)
+- [x] 04 PgPool-II (다중화 모델/로드밸런싱/Watchdog 합의/failover)
+- [x] 05 MongoDB 8.0 (PSS/PSA 합의/WiredTiger/Write Concern/ESR)
+- [x] 외부 리서치 기반 정확성 보정 (G1 공식 분기 6GB, swappiness=0 위험, tcp_tw_recycle 제거, Mongo 8.0 THP 전환)
+- [x] AGENTS.md·structure.md study 섹션 추가
+
+## Phase 8: Linux OS 심화 학습서 작성 [Completed]
+
+- [x] 기존 `study/01-linux-kernel-and-ulimit.md` -> `study/_archive/` 이관(히스토리 보존)
+- [x] `study/linux/` 하위 6장 심화 시리즈(OS 기초 -> 튜닝) + README 인덱스
+- [x] linux/01 시스템 아키텍처/실행 모델 (부팅·systemd·시스템 콜·인터럽트·cgroup)
+- [x] linux/02 프로세스/스케줄링 (fork+CoW·EEVDF 6.6+ 전환·시그널·System V 세마포어·cgroup v2)
+- [x] linux/03 메모리 관리 (page cache·double buffering·OOM·overcommit·THP 전환·NUMA) -- 핵심 장
+- [x] linux/04 파일시스템/I/O (VFS·fd 3계층 함정·ext4 저널링 3모드·fsync)
+- [x] linux/05 네트워킹 스택 (TCP 상태머신·SYN/accept 큐·TIME_WAIT 포트 고갈·keepalive vs 방화벽 30min·NAPI)
+- [x] linux/06 통합 튜닝 매트릭스/체크리스트 (역할별 차이·도메인 불변량 다리)
+- [x] 외부 리서치 반영 (Oracle 커리큘럼 컨설팅 + librarian kernel.org 문서: EEVDF/mTHP/somaxconn 기본 4096/tcp_tw_recycle 4.12 제거)
+- [x] AGENTS.md·study/README.md Linux 심화(프리퀄) 섹션 갱신

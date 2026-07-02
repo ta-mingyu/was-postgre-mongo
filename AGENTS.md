@@ -1,181 +1,105 @@
-# Infrastructure Standardization Consulting Dashboard
+# Infrastructure Standardization Consulting — 지식 베이스
 
-## 1. Executive Summary & Project Overview
+본문 내용은 `harness/` 폴더에 있다. 이 파일은 **목차(Index)** 역할만 수행한다.
+에이전트는 작업 전 `harness/overview.md` 와 대상 도메인 rules를 먼저 로드한다.
 
-- 전사 Web/WAS 및 RDBMS/NoSQL 설정 파편화 해소를 위한 표준화 컨설팅 프로젝트
-- 4개 팀의 사전 질문지 답변을 원천 데이터로 하여, 인프라 튜닝 권장사양 대비 Gap 분석 및 표준화 방안 도출
-- 최종 산출물: 표준 설정 가이드라인 (WAS / PostgreSQL / MongoDB) 및 컨설팅사 리뷰 이메일
-- **도메인 구성**: Web Server 튜닝 가이드 -> WAS Server 표준 가이드라인 -> DB 설정 표준 가이드라인 (PostgreSQL + MongoDB)
+## 프로젝트 유형
 
-```mermaid
-graph TD
-    A[4개 팀 사전 질문지] --> B[원천 데이터 분석]
-    B --> C[인프라 표준 비교 매트릭스]
-    C --> D[벤더 권장 Best Practice 리서치]
-    D --> E[Gap 분석 및 개선안 도출]
-    E --> F[표준 가이드라인 산출물]
+**document** -- 전사 Web/WAS 및 RDBMS/NoSQL 설정 표준화 컨설팅 산출물 저장소. 애플리케이션 코드 없음.
 
-    F --> G[Web Server 가이드 분석]
-    G --> H[WAS Server 표준 가이드라인]
-    H --> I[DB 설정 표준 가이드라인]
+## harness/ 목차
 
-    style A fill:#e8e8e8,stroke:#333
-    style F fill:#d4edda,stroke:#28a745
-    style I fill:#cce5ff,stroke:#004085
-```
+### 핵심 파일
 
----
+| 파일 | 역할 | 언제 읽을지 |
+| :--- | :--- | :--- |
+| [overview.md](./harness/overview.md) | 정체성, 목적, 스코프, 현재 Phase 상태 | 프로젝트 시작 시 |
+| [structure.md](./harness/structure.md) | 디렉토리 트리, 산출물 권위 계층(정본 vs 히스토리) | 탐색/수정 전 |
+| [commands.md](./harness/commands.md) | 가이드 갱신 절차, 리서치 추가, Gap 분석 진입점 | 산출물 작업 시 |
+| [conventions.md](./harness/conventions.md) | 한국어/이모지금지/mermaid, 파일명·버저닝, 용어 | 산출 전 |
+| [workflow.md](./harness/workflow.md) | 도메인 harness 로드 의무, HITL/TA 거버넌스, 루프 정책, todo 갱신 | 작업 착수 전 |
+| [gotchas.md](./harness/gotchas.md) | 함정 + `## 절대 금지`(source 읽기전용, 방화벽 30min, 70% Ceiling, PSA 금지 등) | 산출/변경 전 필수 |
 
-## 2. Agent Workflow & Governance (Harness Index)
+### 참조 데이터
 
-에이전트 구동 시 실시간 컨텍스트 및 도메인별 실행 규칙은 `harness/` 하위 파일에서 관리한다.
-`AGENTS.md`는 목차(Index) 역할만 수행하며, 구동 규칙은 harness 파일에서 로드한다.
+| 파일 | 역할 | 언제 읽을지 |
+| :--- | :--- | :--- |
+| [team-profiles.md](./harness/team-profiles.md) | 4개 팀 현재 인프라 설정 정규화 요약(Gap 분석 기준) | 팀 분석 시 |
 
-### 통합 규정 (최종 산출물)
+### 도메인 산정 규칙 (작업 대상에 따라 필수 로드)
 
-- [인프라 표준 설정 규정 (확정본)](./reports/final-standard-guide.md) -- WAS + DB 통합 확정 배포본 (IT기획실 → 전 사업팀)
+| 파일 | 역할 | 적용 도메인 |
+| :--- | :--- | :--- |
+| [was-rules.md](./harness/was-rules.md) | WAS 산정 공식(Thread/Heap/GC/Pool) + 타임아웃 캐스케이드 + 검증 체크리스트 | WAS/JVM |
+| [postgresql-rules.md](./harness/postgresql-rules.md) | PostgreSQL + PgPool-II 산정 공식 + 70% Ceiling 산출 + 검증 체크리스트 | PostgreSQL/PgPool |
+| [mongodb-rules.md](./harness/mongodb-rules.md) | MongoDB 산정 공식(WiredTiger/Replica Set/ESR) + Write Concern + 검증 체크리스트 | MongoDB |
+| [vendor-research.md](./harness/vendor-research.md) | 벤더별 권장 튜닝값 리서치 로그 + 전사 표준값 도출 근거 | 표준값 근거 확인 시 |
+| [webserver-standard-guide.md](./harness/webserver-standard-guide.md) | Apache 튜닝 가이드 분석 청사(WAS/DB 가이드 설계 기준) | 가이드 구조 설계 시 |
 
-### 서버별 실무 배포 가이드 (운영자용)
+## 통합 규정 (최종 산출물 정본)
 
-- [WAS 서버 설정 가이드](./reports/final/was.md) -- OS 커널 + Tomcat/Spring Boot/WebSphere 설정 + HikariCP + 체크리스트
-- [PostgreSQL 서버 설정 가이드](./reports/final/postgresql.md) -- OS 커널 + PgPool+SR/Standalone + 타임아웃 Guardrails + 체크리스트
-- [PgPool-II 서버 설정 가이드](./reports/final/pgpool-ii.md) -- OS 커널 + 커넥션 풀링/로드밸런싱/페일오버 + 체크리스트
-- [MongoDB 서버 설정 가이드](./reports/final/mongodb.md) -- OS 커널 + Replica Set PSS/Standalone + Write Concern + 체크리스트
+- [인프라 표준 설정 규정(확정본)](./reports/final-standard-guide.md) -- WAS + DB 통합 배포본(IT기획실 -> 전 사업팀)
 
-### WAS Domain (참조용)
+### 서버별 실무 배포 가이드 (정본, 운영자용)
 
-- [WAS Standard Guide V3](./reports/was-standard-guide-v3.md) -- WAS 개별 가이드 최신본 (참조용)
-- [WAS Standard Guide V2](./reports/was-standard-guide-v2.md) -- 이전 버전 (참조용)
-- [WAS Standard Guide V1](./reports/was-standard-guide.md) -- 초기 버전 (참조용)
-- [WAS Domain Rules](./harness/was-rules.md) -- WAS 도메인 작업 시 에이전트 구동 규칙
+- [WAS 서버 설정 가이드](./reports/final/was.md) -- OS 커널 + Tomcat/Spring Boot/WebSphere + HikariCP + 체크리스트
+- [PostgreSQL 서버 설정 가이드](./reports/final/postgresql.md) -- OS 커널 + PgPool+SR/Standalone + 타임아웃 Guardrails
+- [PgPool-II 서버 설정 가이드](./reports/final/pgpool-ii.md) -- 커넥션 풀링/로드밸런싱/페일오버 + 체크리스트
+- [MongoDB 서버 설정 가이드](./reports/final/mongodb.md) -- OS 커널 + Replica Set PSS/Standalone + Write Concern
 
-### PostgreSQL Domain (참조용)
+## 버전 히스토리 (참조용)
 
-- [DB Standard Guide V3](./reports/db-standard-guide-v3.md) -- DB 개별 가이드 최신본 (참조용)
-- [DB Standard Guide V2](./reports/db-standard-guide-v2.md) -- 이전 버전 (참조용)
-- [DB Standard Guide V1](./reports/db-standard-guide.md) -- 초기 버전 (참조용)
-- [PostgreSQL Domain Rules](./harness/postgresql-rules.md) -- PostgreSQL / PgPool-II 도메인 작업 시 에이전트 구동 규칙
+> 권위 계층: `reports/final/`(정본) > `-v3`(개별 최신) > `-v1/-v2`(이전). 상세는 structure.md.
 
-### MongoDB Domain (참조용)
+- [WAS Standard Guide V3](./reports/was-standard-guide-v3.md) | [V2](./reports/was-standard-guide-v2.md) | [V1](./reports/was-standard-guide.md)
+- [DB Standard Guide V3](./reports/db-standard-guide-v3.md) | [V2](./reports/db-standard-guide-v2.md) | [V1](./reports/db-standard-guide.md)
+## 학습 문서 (study/)
 
-- [DB Standard Guide V3](./reports/db-standard-guide-v3.md) -- DB 개별 가이드 최신본 (참조용, MongoDB 8.3 기준)
-- [DB Standard Guide V2](./reports/db-standard-guide-v2.md) -- 이전 버전 (참조용)
-- [DB Standard Guide V1](./reports/db-standard-guide.md) -- 초기 버전 (참조용)
-- [MongoDB Domain Rules](./harness/mongodb-rules.md) -- MongoDB 도메인 작업 시 에이전트 구동 규칙
+- [TA 학습 커리큘럼](./study/README.md) -- 커리큘럼 인덱스 + 학습 경로 + 도메인 간 불변량 지도
+- [Linux OS 심화(프리퀄)](./study/linux/README.md) -- OS 기초부터 튜닝까지. 부팅/프로세스/메모리/FS/네트워크/통합 튜닝 6장
+  - [01 시스템 아키텍처/실행 모델](./study/linux/01-architecture-and-execution.md) -- 부팅·systemd·시스템 콜·인터럽트·cgroup
+  - [02 프로세스/스케줄링](./study/linux/02-process-and-scheduling.md) -- fork+CoW·EEVDF(6.6+)·시그널·세마포어·cgroup v2
+  - [03 메모리 관리(핵심)](./study/linux/03-memory-management.md) -- page cache·OOM·overcommit·THP·NUMA
+  - [04 파일시스템/I/O](./study/linux/04-filesystem-and-io.md) -- VFS·fd 3계층·ext4 저널링·fsync
+  - [05 네트워킹 스택](./study/linux/05-networking-stack.md) -- TCP 상태머신·TIME_WAIT·keepalive·방화벽 30min
+  - [06 통합 튜닝/체크리스트](./study/linux/06-tuning-matrix-and-checklist.md) -- 역할별 매트릭스·도메인 불변량 다리
+- [02 WAS/JVM](./study/02-was-jvm-and-thread-pool.md) -- GC 분기(Parallel/G1/ZGC), Heap 분할, 스레드/풀 경제학
+- [03 PostgreSQL 내부](./study/03-postgresql-internals.md) -- MVCC/WAL/double buffering/4종 타임아웃/플래너
+- [04 PgPool-II](./study/04-pgpool-ii.md) -- 다중화 모델/로드밸런싱/Watchdog 합의/failover
+- [05 MongoDB 8.0](./study/05-mongodb-wiredtiger.md) -- PSS/PSA 합의/WiredTiger/Write Concern/ESR
 
-### 리서치
+> study/는 TA 기본 소양 학습 자료(Explanation). 설정값 정본은 항상 `reports/final/`.
 
-- [PostgreSQL Architecture Research](./research/postgresql/architecture-comparison.md) -- PostgreSQL 구성 아키텍처 비교 (Standalone, SR, PgPool+SR, Patroni, repmgr)
-- [MongoDB Architecture Research](./research/mongodb/architecture-comparison.md) -- MongoDB 구성 아키텍처 비교 (Standalone, Replica Set, Sharded Cluster)
-- [WAS-DB Integration Research](./research/was/was-db-integration.md) -- WAS-DB 연동 아키텍처별 타임아웃/커넥션 풀 산정 기준
+## 리서치 (research/)
 
-### 공통
+- [PostgreSQL 아키텍처 비교](./research/postgresql/architecture-comparison.md) -- Standalone/SR/PgPool+SR/Patroni/repmgr
+- [MongoDB 아키텍처 비교](./research/mongodb/architecture-comparison.md) -- Standalone/Replica Set/Sharded Cluster
+- [WAS-DB 연동 연구](./research/was/was-db-integration.md) -- 아키텍처별 타임아웃/커넥션 풀 산정 기준
 
-- [Agent Context & Token Management](./harness/agent-context.md) -- 프로젝트 상태, 팀별 메타데이터, HITL 이슈
-- [Web Server Guide Analysis](./harness/webserver-standard-guide.md) -- Apache 튜닝 가이드 분석 청사진 (WAS/DB 가이드 설계 기준)
-- [Vendor Research & Standards](./harness/vendor-research.md) -- 벤더별 권장 튜닝 파라미터 리서치 결과
+## 원천 소스 (source/, 읽기 전용 -- 수정 금지)
 
-### 커뮤니케이션
+| 소스 | 대상 팀 | 주요 특이 |
+| :--- | :--- | :--- |
+| [platform-develop-team.md](./source/platform-develop-team.md) | 플랫폼개발팀 | Tomcat(Spring Boot 내장), PostgreSQL(PgPool 경유), MongoDB(Replica Set), RTO 10s/RPO 5s |
+| [cl-platform-team.md](./source/cl-platform-team.md) | CL플랫폼팀 | CLS 전용 WAS, Old 영역 90% 임계(HITL-003), Parallel GC |
+| [park-service-team.md](./source/park-service-team.md) | 주차서비스팀 | Tomcat 9.0.70, DB2(범위 외), G1 GC |
+| [info-service-team.md](./source/info-service-team.md) | 현금정보계팀 | WebSphere Liberty 23.0.0.2 ND, 7 컨테이너 고정/동적 이원 |
+| [apache-tuning-guide.md](./source/apache-tuning-guide.md) | -- | 사내 Web Server 튜닝 가이드 V3.1(WAS/DB 가이드 설계 기준) |
 
-- [컨설팅사 리뷰 답변 메일](./email/re-was-guide-review.md) -- 1차 답변
-- [컨설팅사 2차 답변 메일](./email/re-was-guide-review-2.md) -- 2차 답변
-- [DBA 검수 의견 반영 결과 및 통합 규정 최종 검수 요청](./email/re-was-guide-review-3.md) -- DBA(데이타뱅크 조도형 차장) PostgreSQL 6건 피드백 반영 완료, 통합 확정본 검수 요청
+## 커뮤니케이션 (email/)
 
-### 작업 관리
+- [컨설팅사 리뷰 답변 1차](./email/re-was-guide-review.md)
+- [컨설팅사 답변 2차](./email/re-was-guide-review-2.md)
+- [DBA 검수 의견 반영 + 통합 규정 최종 검수 요청](./email/re-was-guide-review-3.md) -- 데이타뱅크 조도형 차장 PostgreSQL 6건 피드백 반영
 
-- [Todo Roadmap](./todo.md) -- 전체 프로젝트 로드맵 및 진행 상태
-- **에이전트 규칙: 작업 완료 후 반드시 todo.md의 체크박스를 `[x]`로 갱신할 것**
+## 작업 관리
 
----
+- [Todo Roadmap](./todo.md) -- 전체 Phase 로드맵. **작업 완료 후 반드시 체크박스 `[x]` 갱신**
 
-## 3. Input Sources (Read-Only)
+## 빠른 참조
 
-각 팀이 제출한 원천 데이터. 수정 금지, 읽기 전용.
-
-| 소스 파일 | 대상 팀 | WAS | DB | 주요 특이사항 |
-| :--- | :--- | :--- | :--- | :--- |
-| [platform-develop-team.md](./source/platform-develop-team.md) | 플랫폼개발팀 | Apache Tomcat (Spring Boot 내장) | PostgreSQL (via PgPool-II), MongoDB (Replica Set) | 나이스파크/차저 2계계 통합 운영, RTO 10초/RPO 5초 |
-| [cl-platform-team.md](./source/cl-platform-team.md) | CL플랫폼팀 | CLS 전용 WAS | 해당없음 | Old 영역 90% 임계치 도달, Parallel GC |
-| [park-service-team.md](./source/park-service-team.md) | 주차서비스팀 | Apache Tomcat 9.0.70 | DB2 (PostgreSQL/MongoDB 미사용) | DB2 권한 부재로 타임아웃 설정 미확인 |
-| [info-service-team.md](./source/info-service-team.md) | 현금정보계팀 | IBM WebSphere Liberty v23.0.0.2 ND | 해당없음 (WAS 정보만 제출) | 7개 컨테이너 고정/동적 메모리 이원 운영 |
-| [apache-tuning-guide.md](./source/apache-tuning-guide.md) | -- | Apache HTTP Server | -- | 사내 Web Server 튜닝 가이드 V3.1, WAS/DB 가이드 설계 기준 |
-
----
-
-## 4. 인프라 아키텍처 토폴로지
-
-```mermaid
-graph LR
-    subgraph 플랫폼개발팀
-        NP[Nice Park<br/>Java 17 / Spring Boot 3.5.3]
-        NC[Nice Charger<br/>Java 15,25 / Tomcat 9, Spring Boot 4.0.5]
-    end
-
-    subgraph CL플랫폼팀
-        CLS[CLS WAS<br/>Java 15.0.2 / Parallel GC]
-    end
-
-    subgraph 주차서비스팀
-        PK[Tomcat 9.0.70<br/>Java 15.0.2 / G1 GC]
-    end
-
-    subgraph 현금정보계팀
-        WLP[WebSphere Liberty 23.0.0.2<br/>OpenJDK 15.0.2 / Parallel GC]
-    end
-
-    NP --> PG1[PgPool-II]
-    NC --> PG2[PgPool-II]
-    PG1 --> PG[(PostgreSQL)]
-    PG2 --> PG
-    NP --> MG[(MongoDB<br/>Replica Set)]
-    PK --> DB2[(DB2)]
-    WLP --> |7 Containers| WLP_DB[(DB 미명시)]
-
-    style PG fill:#336791,color:#fff
-    style MG fill:#4DB33D,color:#fff
-    style DB2 fill:#054ADA,color:#fff
-```
-
----
-
-## 5. Phase Roadmap
-
-- **Phase 1 (Completed):** 원천 소스 데이터 분석 및 인프라 표준 비교 매트릭스 도출
-- **Phase 2 (Completed):** 벤더별 권장 Best Practice 알고리즘 리서치 및 Gap 분석
-- **Phase 3 (Completed):** WAS Server 표준 가이드라인 최종본 작성 완료
-- **Phase 4 (Completed):** DB 설정 표준 가이드라인 V3 (PostgreSQL 4종 아키텍처 + MongoDB 8.3 + PgPool-II + Patroni + Sharded Cluster)
-- **Phase 5 (Pending):** MongoDB RAM/코어별 매트릭스 테이블 상세 수치 보완
-
----
-
-## 6. Human-in-the-Loop: 사용자 확인 필요 이슈
-
-| 이슈 ID | 팀 | 내용 | 상태 |
-| :--- | :--- | :--- | :--- |
-| `HITL-001` | 주차서비스팀 | DB2 타임아웃 설정 확인 | **Closed (Scope-out)** |
-| `HITL-002` | 현금정보계팀 | DB 시스템 정보 누락 | **Closed (Scope-out)** |
-| `HITL-003` | CL플랫폼팀 | Old 영역 90% 사용률에 대한 현재 대응 방안 및 GC 튜닝 이력 확인 필요 | 대기 |
-| `HITL-004` | 플랫폼개발팀 | MongoDB COLLSCAN 모니터링 미수행 상태에 대한 운영 위험도 평가 필요 | 대기 |
-
----
-
-## 7. 프로젝트 그라운드 룰
-
-1. **언어:** 모든 산출물은 한국어로 작성 (시스템 설정 명칭, 파라미터, 소스 코드는 원문 유지)
-2. **시각화:** 아키텍처 구조, 흐름도, 인프라 토폴로지는 Mermaid 차트로 적극 포함
-3. **전문성:** 무분별한 이모지 사용 엄격 금지
-4. **컨텍스트 분리:** 최상위 `AGENTS.md`는 목차(Index) 역할만 수행. 실시간 컨텍스트 및 에이전트 상태는 `harness/` 하위에서 관리
-5. **점진적 연구:** 한 번에 모든 장표를 생성하지 않고, 최신 튜닝 알고리즘 및 벤더 권장사양 리서치를 병행하며 점진적 고도화
-6. **Human-in-the-Loop:** 모호한 사안, 데이터 누락, 구조적 트레이드오프 발생 시 반드시 사용자(TA)에게 질문 후 진행
-7. **Reports 산출물 관리:**
-   - 표준 가이드라인 등의 Report 산출물은 `reports/` 폴더에서 관리
-   - **파일명 규칙:** 간결한 영문 소문자 + 하이픈, 숫자 및 버전 정보는 파일명에 포함하지 않음 (예: `was-standard-guide.md`, `db-standard-guide.md`)
-   - **버저닝 규칙:** 내용 갱신 시 `{기본파일명}-v{Int}.md` 형식으로 새 버전 파일을 생성하고, `AGENTS.md`의 링크는 항상 최신 버전을 가리킴. 이전 버전 파일은 히스토리 참조용으로 `reports/`에 보존
-   - **Harness는 규칙 명시:** `harness/` 폴더는 에이전트 구동 규칙, 컨텍스트, 분석 결과 등 메타데이터만 관리. Report 산출물 본문은 절대 `harness/`에 작성하지 않음
-8. **도메인별 구동 규칙:** 에이전트는 작업 대상 도메인(WAS / PostgreSQL / MongoDB)에 따라 해당 harness 규칙 파일을 필수로 로드 후 작업 시작
-9. **리서치 관리:**
-   - 모든 리서치 결과는 `research/` 폴더에 도메인별 하위 폴더(`postgresql/`, `mongodb/`, `was/`)로 분류하여 저장
-   - **파일명 규칙:** 간결한 영문 소문자 + 하이픈 (예: `architecture-comparison.md`, `was-db-integration.md`)
-   - **의무:** 에이전트는 리서치 수행 시 반드시 `research/`에 결과를 기록. harness/에 리서치 본문을 작성하지 않음
-   - **출처 명시:** 모든 리서치 문서는 말미에 출처(Source)를 명시
-   - **AGENTS.md 인덱스:** 새로운 리서치 파일 생성 시 AGENTS.md의 리서치 섹션에 링크를 추가
+- 도메인 산정 공식/체크리스트: `harness/{was,postgresql,mongodb}-rules.md`
+- 도메인 공통 불변량(70% Ceiling, 방화벽 30min, 타임아웃 캐스케이드): `harness/gotchas.md`
+- 반복 워크플로우: `.opencode/skills/update-guide`(가이드 갱신), `.opencode/skills/gap-analysis`(팀 Gap 분석), `.opencode/skills/verify-standards`(표준값 시효성 외부 리서치 검증)
+- 산출 규칙·버저닝: `harness/conventions.md`
+- 작업 절차·HITL: `harness/workflow.md`
