@@ -50,18 +50,22 @@ WAS (HikariCP) --> PgPool-II --> PostgreSQL (Master)
 shared_buffers = RAM * 0.25
 effective_cache_size = RAM * 0.75  (실제 할당 아님, 플래너 참고값)
 work_mem = (RAM - shared_buffers) / (max_connections * 3)  (상한선)
-maintenance_work_mem = RAM * 0.03 ~ 0.05
+maintenance_work_mem = RAM * 0.03 ~ 0.0625  (PGTune 기준, 상한 0.0625)
 wal_buffers = 16MB 고정 (또는 기본값 -1, 자동 계산 시 최대 16MB 캡)
 ```
+
+> **64GB+ 대형 서버 권장**: `autovacuum_work_mem`을 maintenance_work_mem과 분리해 autovacuum_max_workers(3) 동시 실행 시 메모리 폭발(최대 3 × maintenance_work_mem)을 방지. 예: 64GB 서버 maintenance_work_mem=4GB + autovacuum_work_mem=1GB. (2026-07-02 TA 확정)
 
 **RAM별 매트릭스 (DB 전용 서버)**:
 
 | DB 서버 RAM | shared_buffers | effective_cache_size | work_mem | maintenance_work_mem | wal_buffers |
 | :---: | :---: | :---: | :---: | :---: | :---: |
-| 8 GB | 2 GB | 6 GB | 10 MB | 384 MB | 16 MB |
-| 16 GB | 4 GB | 12 GB | 32 MB | 1 GB | 16 MB |
-| 32 GB | 8 GB | 24 GB | 64 MB | 2 GB | 16 MB |
-| 64 GB | 16 GB | 48 GB | 128 MB | 4 GB | 16 MB |
+| 8 GB | 2 GB | 6 GB | 8 MB | 384 MB | 16 MB |
+| 16 GB | 4 GB | 12 GB | 16 MB | 1 GB | 16 MB |
+| 32 GB | 8 GB | 24 GB | 32 MB | 2 GB | 16 MB |
+| 64 GB | 16 GB | 48 GB | 64 MB | 4 GB | 16 MB |
+
+> work_mem 매트릭스는 운영 적용 표준값. 이론 상한 공식 `(RAM-shared_buffers)/(max_conn*3)`(kofemann/pgtune)보다 보수적(OLTP/PgPool 환경 최적화, RAM 2배마다 2배 패턴). 2026-07-02 TA 결정으로 reports/final과 정합.
 
 ### 2.2 WAL 및 체크포인트
 
@@ -106,7 +110,7 @@ effective_io_concurrency = 200  (HDD: 2)
 
 | 파라미터 | 산정 기준 | 비고 |
 | :--- | :--- | :--- |
-| `num_init_children` | Sum(WAS maxPoolSize) + 여유량 (최소 120) | Fixed-size 풀 합산보다 반드시 커야 함 |
+| `num_init_children` | Sum(WAS maxPoolSize) + 여유량 (표준 120) | PgPool 공식(max_pool×num_init_children ≤ max_conn−superuser_reserved=97) 초과 위험 수용. 쿼리 취소 시 ×2 연결 소모 주의. 피크 SHOW POOL_PROCESSES 모니터링 필수 (2026-07-02 TA 확정) |
 | `max_pool` | 단일 DB/계정: 1 / 복수 DB/계정: 조합 수 | 불필요한 상향 시 백엔드 연결 기하급수적 증가 |
 | `child_life_time` | 1,680 (28min) | DB idle_session_timeout(30min)보다 짧게 |
 | `connection_life_time` | 1,680 (28min) | PgPool -> DB 연결 수명 |
@@ -118,9 +122,11 @@ effective_io_concurrency = 200  (HDD: 2)
 ```conf
 load_balance_mode = on
 backend_clustering_mode = 'streaming_replication'
-backend_weight0 = 1  # Primary
-backend_weight1 = 1  # Replica (R:W 7:3 환경에서 읽기 분산)
+backend_weight0 = 1  # Primary (쓰기 전담 + 최소 읽기)
+backend_weight1 = 3  # Replica (Primary 1 : Replica 3 = 25%:75%, 읽기 부하 Replica 집중)
 ```
+
+> 비율 근거: PgPool 스트리밍 복제 표준 패턴(Primary 쓰기 전담, Replica 읽기 집중). 정산/결제는 애플리케이션에서 readPreference=primary 고정하므로 weight와 무관. (2026-07-02 TA 확정, reports/final과 정합)
 
 ### 3.3 페일오버 및 고가용성
 

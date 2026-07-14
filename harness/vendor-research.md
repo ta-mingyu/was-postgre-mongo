@@ -129,3 +129,46 @@
 | **Conn Pool** | minimumIdle | maximumPoolSize와 동일 | Fixed-size pool 권장 |
 | **Thread** | maxThreads (Tomcat) | 200 (기본값) | 대부분의 워크로드에 적합 |
 | **Thread** | Liberty Executor | 기본값 (자동 튜닝) | Liberty 공식 불권장 |
+
+---
+
+## 4. 표준값 변경 이력 (verify-standards 검증 결과)
+
+> 외부 리서치(context7, 벤더 공식 문서, release notes) 기반 검증으로 식별된 정합성 이슈 및 TA 확정 변경 사항. `verify-standards` 스킬 절차에 따라 기록.
+
+### 4.1 [2026-07-02] PgPool backend_weight 표준화
+
+| 항목 | 기존 | 변경 | 근거 |
+| :--- | :--- | :--- | :--- |
+| harness `backend_weight1` (Replica) | 1 | **3** | reports/final(pgpool-ii.md)과 정합. PgPool 스트리밍 복제 표준 패턴(Primary 쓰기 전담, Replica 읽기 집중). PGTune 비율 아님(운영 결정). 정산/결제는 앱 readPreference=primary 고정으로 weight 무관 |
+| 비율 | 1:1 (50%:50%) | **1:3 (25%:75%)** | Primary 읽기 부하 감소, R:W=7:3 환경 정합 |
+
+### 4.2 [2026-07-02] PostgreSQL maintenance_work_mem 상한 상향
+
+| 항목 | 기존 | 변경 | 근거 |
+| :--- | :--- | :--- | :--- |
+| harness 상한 | RAM × 0.03 ~ 0.05 | **RAM × 0.03 ~ 0.0625** | PGTune 원본(gregs1104/pgtune) web/oltp = RAM/16 = 0.0625와 정합. reports/final PgPool+SR 매트릭스(0.0625)를 harness가 초과하던 정합성 버그 해소 |
+| 64GB+ 보완 | (없음) | autovacuum_work_mem 분리 권장 | autovacuum_max_workers(3) 동시 실행 시 최대 3×maintenance_work_mem 메모리 소모 방지 |
+
+> 출처: [PGTune 소스코드](https://github.com/gregs1104/pgtune), [PostgreSQL 17 공식 문서](https://www.postgresql.org/docs/17/runtime-config-resource.html)
+
+### 4.3 [2026-07-02] PgPool num_init_children=120 유지 (공식 위험 수용)
+
+| 항목 | 검증 결과 | 결정 |
+| :--- | :--- | :--- |
+| 공식 준수값 | max_pool×num_init_children ≤ 97 (쿼리 취소 시 ×2 → ≤48) | **120 유지** (TA 확정) |
+| 현행 120 | 공식 위반(120 > 97). 쿼리 취소 시 240 >> 97 | 위험 수용 |
+| 유지 조건 | (1) 피크 SHOW POOL_PROCESSES 모니터링 (2) 쿼리 취소 빈도 추적·가드레일로 최소화 (3) "too many clients already" → failover 위험 Runbook 명시 | reports/final/pgpool-ii.md §2.1·§5 반영 |
+| 기각 대안 | 97 축소(클라이언트 대기 증가) / max_connections 200 상향(100 고정 원칙 훼손, OOM 위험) | 단점으로 인해 기각 |
+
+> 출처: [PgPool-II 4.7.2 공식 매뉴얼 — runtime-config-connection](https://www.pgpool.net/docs/latest/en/html/runtime-config-connection.html) (공식 원문 인용)
+
+### 4.4 [2026-07-02] work_mem 산정 공식 `*8` -> `*3` 통일 + 매트릭스 표준화
+
+| 항목 | 기존 | 변경 | 근거 |
+| :--- | :--- | :--- | :--- |
+| 공식 | reports `*8` / harness `*3` (불일치) | **`*3` 단일화** (kofemann/pgtune) | PostgreSQL 17 공식 "complex query = multiple concurrent operations" 경고에 부합. `*8`(세션당 8개 동시 연산 가정)은 과도 보수적이고 출처 불명. `*3`은 업계 보편적 튜닝 가이드라인 |
+| harness 매트릭스 | 10/32/64/128 MB | **8/16/32/64 MB** (reports와 정합) | 운영 단순화(RAM 2배마다 2배 패턴) + OLTP/PgPool 환경 최적화. 이론 상한(*3 결과 20/48/96/192MB)보다 보수적 |
+| 공식 vs 매트릭스 관계 | — | 공식은 "이론 상한 참고치", 매트릭스는 "운영 적용 표준값"으로 명시 | PostgreSQL 공식 문서가 work_mem에 명시 산정 공식을 제공하지 않으므로, 워크로드 의존적 매트릭스 운영값이 우선. 둘이 달라도 정합성 위반 아님 |
+
+> 출처: [PostgreSQL 17 Runtime Config — work_mem](https://www.postgresql.org/docs/17/runtime-config-resource.html#GUC-WORK-MEM) (명시 공식 없음, "concurrent operations" 경고만), [kofemann/pgtune](https://github.com/kofemann/pgtune)

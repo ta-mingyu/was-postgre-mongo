@@ -6,6 +6,44 @@
 
 ---
 
+## 0. 적용 전제
+
+PgPool-II는 WAS의 비싼 DB 커넥션을 다중화하고, 읽기 분산·HA를 담당한다. 아래 토폴로지와 전제를 반드시 함께 확인한다.
+
+```mermaid
+graph LR
+    subgraph WAS Layer
+        W1[WAS-1<br/>HikariCP]
+        W2[WAS-2<br/>HikariCP]
+        W3[WAS-N<br/>HikariCP]
+    end
+
+    subgraph PgPool Layer
+        PP1[PgPool-II<br/>Active]
+        PP2[PgPool-II<br/>Standby]
+    end
+
+    subgraph PostgreSQL Layer
+        PG_M[(PostgreSQL<br/>Primary)]
+        PG_R[(PostgreSQL<br/>Replica)]
+    end
+
+    W1 --> VIP[Virtual IP]
+    W2 --> VIP
+    W3 --> VIP
+    VIP --> PP1
+    PP1 -->|Write / Read| PG_M
+    PP1 -->|Read Only<br/>Load Balance| PG_R
+    PP1 -.->|Watchdog<br/>SPOF 방지| PP2
+    PG_M -->|WAL Streaming| PG_R
+```
+
+- **커넥션 풀링으로 70% Ceiling 대체**: PgPool 환경에서는 직접 연결의 70% Ceiling Rule이 PgPool-II의 연결 풀링으로 대체됨. WAS 풀 합산이 num_init_children을 초과해도 PgPool Listen Queue가 초과분을 안전하게 흡수
+- **타임아웃 캐스케이드**: `WAS maxLifetime(27min) < PgPool child_life_time(28min) < PG idle_session_timeout(30min) < 방화벽(30min)` (엄격 부등호)
+- **kernel.sem 선행 필수**: `num_init_children=120` 구동 시 세마포어 상한 필수. 미설정 시 구동 실패
+
+---
+
 ## 1. OS 커널 설정
 
 ### 1.1 공통 파라미터 (모든 서버 적용)
@@ -91,37 +129,7 @@ systemctl restart pgpool
 
 ## 2. PgPool-II 설정
 
-### 2.1 아키텍처
-
-```mermaid
-graph LR
-    subgraph WAS Layer
-        W1[WAS-1<br/>HikariCP]
-        W2[WAS-2<br/>HikariCP]
-        W3[WAS-N<br/>HikariCP]
-    end
-
-    subgraph PgPool Layer
-        PP1[PgPool-II<br/>Active]
-        PP2[PgPool-II<br/>Standby]
-    end
-
-    subgraph PostgreSQL Layer
-        PG_M[(PostgreSQL<br/>Primary)]
-        PG_R[(PostgreSQL<br/>Replica)]
-    end
-
-    W1 --> VIP[Virtual IP]
-    W2 --> VIP
-    W3 --> VIP
-    VIP --> PP1
-    PP1 -->|Write / Read| PG_M
-    PP1 -->|Read Only<br/>Load Balance| PG_R
-    PP1 -.->|Watchdog<br/>SPOF 방지| PP2
-    PG_M -->|WAL Streaming| PG_R
-```
-
-### 2.2 PgPool-II 전용 파라미터
+### 2.1 PgPool-II 전용 파라미터
 
 | 파라미터 | 표준값 | 역할 |
 |:---|:---|:---|
@@ -135,9 +143,13 @@ graph LR
 | backend_clustering_mode | 'streaming_replication' | v4.x+ 스트리밍 복제 모드. 기존 master_slave_mode는 폐지 |
 | backend_weight0 / weight1 | Primary 1 / Replica 3 | 읽기 쿼리 분산 비율. Primary는 쓰기 전담 + 최소 읽기, Replica에 읽기 부하 집중 (1:3 = 25%:75%) |
 
-> num_init_children=120은 PgPool 공식 권고 공식(max_pool x num_init_children <= max_connections - superuser_reserved)을 초과(1x120 > 97). 단, 연결 풀링으로 실제 동시 백엔드 연결은 100 이하 유지됨. **피크 타임 SHOW POOL_PROCESSES 모니터링 필수**.
+> num_init_children=120은 PgPool 공식 권고 공식(max_pool x num_init_children <= max_connections - superuser_reserved)을 초과(1x120 > 97). 단, 연결 풀링으로 실제 동시 백엔드 연결은 100 이하 유지됨.
+>
+> **쿼리 취소(cancellation) 시 연결 2배 소모 주의**: PgPool 공식은 쿼리 취소 발생 시 max_pool x num_init_children x 2 <= max_connections - superuser_reserved 를 요구. 피크 + 쿼리 취소 겹칠 시 PostgreSQL "too many clients already" → failover 트리거 위험.
+>
+> **운영 가드 (2026-07-02 TA 확정, 120 유지 조건)**: (1) 피크 타임 `SHOW POOL_PROCESSES` 모니터링 필수 (2) 쿼리 취소 빈도 추적 — statement_timeout/lock_timeout 가드레일로 취소 최소화 (3) "too many clients already" 발생 시 failover 트리거될 수 있음을 운영 Runbook에 명시.
 
-### 2.3 pgpool.conf 전문
+### 2.2 pgpool.conf 전문
 
 ```conf
 # -------------------------------------------------------
@@ -180,7 +192,7 @@ failover_command = '/etc/pgpool-II/failover.sh'
 
 ---
 
-## 3. 커넥션 풀 & 타임아웃 설정
+## 3. 타임아웃 & 커넥션 캐스케이드
 
 ### 3.1 타임아웃 캐스케이드 (WAS -> PgPool -> PostgreSQL)
 
@@ -217,33 +229,9 @@ WAS -> PgPool 계층:
 
 > PgPool-II 환경에서는 직접 연결의 70% Ceiling Rule이 PgPool-II의 연결 풀링으로 대체됨. WAS 풀 합산이 num_init_children을 초과해도 PgPool Listen Queue가 초과분을 안전하게 흡수.
 
-### 3.3 PgPool 산출 예시 (플랫폼개발팀 나이스M 기준)
-
-| 항목 | 산출 수치 | 비고 |
-|:---|:---|:---|
-| 대상 서비스 | 나이스M (Nice M) | PostgreSQL(via PgPool-II) + MongoDB 운영 |
-| 총 WAS 인스턴스 수 | 4개 (이중화) | WAS 표준 설정 기준 |
-| 전체 WAS 풀 합산 | 80~100개 | 인스턴스당 20~25 |
-| PgPool num_init_children | 120 | DBA 운영 권장값. 연결 풀링으로 백엔드 동시 연결 100 이하 유지 |
-| PgPool max_pool | 1 | 단일 DB/단일 계정 |
-| PgPool -> PG 최대 백엔드 연결 | 100개 (이론적 상한) | 연결 풀링으로 실제 동시 점유는 100 이하 |
-| PG max_connections | 100 | OOM 예방 100 고정 |
-| WAS 풀(80~100) <= num_init_children(120) | 정상 | 초과 클라이언트는 Listen Queue 대기 후 순차 처리 |
-
 ---
 
-## 4. 모니터링 체크리스트
-
-| 모니터링 항목 | 조회 방법 | 경고(Warning) | 위험(Critical) | 조치 |
-|:---|:---|:---|:---|:---|
-| PgPool 커넥션 사용률 | `SHOW POOL_NODES` + `SHOW POOL_PROCESSES` | 사용률 > 80% | 사용률 > 95% | num_init_children 증설 검토 |
-| 피크 활성 백엔드 연결 수 | `SHOW POOL_PROCESSES` | 80+ 동시 활성 | 100 도달 | "too many clients already" 위험. 트래픽 분산 또는 num_init_children 조정 |
-
-> 피크 타임 백엔드 연결 수 주기적 모니터링 필수. 120개 child 프로세스가 동시에 백엔드 연결을 요구하는 극단적 피크 시 PostgreSQL이 "too many clients already" 반환 + failover 트리거 가능.
-
----
-
-## 5. 검증 체크리스트
+## 4. 검증 체크리스트
 
 - [ ] SHOW POOL_PROCESSES 피크 활성 연결 < 100 -- 최악 시나리오 방지 (위반 시: "too many clients already" + failover 트리거)
 - [ ] reserved_connections >= 1 -- 관리 접속 보장 (위반 시: 장애 시 DBA 접속 불가)
@@ -256,3 +244,32 @@ WAS -> PgPool 계층:
 - [ ] failover_command 지정 -- 자동 페일오버 스크립트 (위반 시: Primary 다운 시 수동 개입 필요)
 - [ ] child_life_time < DB idle_session_timeout -- 타임아웃 캐스케이드 준수 (위반 시: DB 강제 차단 전 PgPool이 먼저 회수 불가)
 - [ ] systemd 서비스 LimitNOFILE/LimitNPROC override 설정 -- 서비스 데몬 ulimit 적용 (미적용 시: limits.conf 무시되어 기본값 1024로 동작)
+
+---
+
+## 5. 모니터링 체크리스트
+
+| 모니터링 항목 | 조회 방법 | 경고(Warning) | 위험(Critical) | 조치 |
+|:---|:---|:---|:---|:---|
+| PgPool 커넥션 사용률 | `SHOW POOL_NODES` + `SHOW POOL_PROCESSES` | 사용률 > 80% | 사용률 > 95% | num_init_children 증설 검토 |
+| 쿼리 취소 빈도 | `SHOW POOL_PROCESSES` + PgPool 로그(cancellation) | 빈발 시 | 피크 + 취소 겹침 | statement_timeout/lock_timeout 가드레일 점검. "too many clients already" → failover 위험 |
+| 피크 활성 백엔드 연결 수 | `SHOW POOL_PROCESSES` | 80+ 동시 활성 | 100 도달 | "too many clients already" 위험. 트래픽 분산 또는 num_init_children 조정 |
+
+> 피크 타임 백엔드 연결 수 주기적 모니터링 필수. 120개 child 프로세스가 동시에 백엔드 연결을 요구하는 극단적 피크 시 PostgreSQL이 "too many clients already" 반환 + failover 트리거 가능.
+
+---
+
+## 부록. PgPool 산출 예시 (플랫폼개발팀 나이스M 기준)
+
+> 특정 팀 사례로, 산정 방법론의 참고용. 전사 표준값은 본문 §2 참조.
+
+| 항목 | 산출 수치 | 비고 |
+|:---|:---|:---|
+| 대상 서비스 | 나이스M (Nice M) | PostgreSQL(via PgPool-II) + MongoDB 운영 |
+| 총 WAS 인스턴스 수 | 4개 (이중화) | WAS 표준 설정 기준 |
+| 전체 WAS 풀 합산 | 80~100개 | 인스턴스당 20~25 |
+| PgPool num_init_children | 120 | DBA 운영 권장값. 연결 풀링으로 백엔드 동시 연결 100 이하 유지 |
+| PgPool max_pool | 1 | 단일 DB/단일 계정 |
+| PgPool -> PG 최대 백엔드 연결 | 100개 (이론적 상한) | 연결 풀링으로 실제 동시 점유는 100 이하 |
+| PG max_connections | 100 | OOM 예방 100 고정 |
+| WAS 풀(80~100) <= num_init_children(120) | 정상 | 초과 클라이언트는 Listen Queue 대기 후 순차 처리 |

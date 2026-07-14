@@ -7,6 +7,44 @@
 
 ---
 
+## 0. 적용 전제
+
+프로덕션 표준 아키텍처는 PgPool-II + Streaming Replication. 아래 토폴로지와 전제를 반드시 함께 확인한다.
+
+```mermaid
+graph LR
+    subgraph WAS Layer
+        W1[WAS-1<br/>HikariCP]
+        W2[WAS-2<br/>HikariCP]
+        W3[WAS-N<br/>HikariCP]
+    end
+
+    subgraph PgPool Layer
+        PP1[PgPool-II<br/>Active]
+        PP2[PgPool-II<br/>Standby]
+    end
+
+    subgraph PostgreSQL Layer
+        PG_M[(PostgreSQL<br/>Primary)]
+        PG_R[(PostgreSQL<br/>Replica)]
+    end
+
+    W1 --> VIP[Virtual IP]
+    W2 --> VIP
+    W3 --> VIP
+    VIP --> PP1
+    PP1 -->|Write / Read| PG_M
+    PP1 -->|Read Only<br/>Load Balance| PG_R
+    PP1 -.->|Watchdog<br/>SPOF 방지| PP2
+    PG_M -->|WAL Streaming| PG_R
+```
+
+- **max_connections=100 고정은 PgPool-II 연결 풀링 전제**. WAS 직접 연결 시에는 70% Ceiling 산정 공식(`max_connections >= Sum(WAS maxPoolSize) * 1.5`)을 따를 것
+- **방화벽 TCP 30min**: 모든 타임아웃의 최상위. WAS maxLifetime(27min) < PgPool child_life_time(28min) < PG idle_session_timeout(30min) < 방화벽(30min)
+- **PostgreSQL과 MongoDB는 동일 호스트 병설 금지**: `vm.overcommit_memory` 설정이 PostgreSQL(2)과 MongoDB 8.0(1)에서 서로 충돌. 반드시 물리적으로 분리된 서버에서 운영
+
+---
+
 ## 1. OS 커널 설정
 
 ### 1.1 공통 파라미터 (모든 서버 적용)
@@ -108,37 +146,7 @@ systemctl restart postgresql
 
 ## 2. PostgreSQL 설정
 
-### 2.1 프로덕션 표준: PgPool-II + Streaming Replication
-
-```mermaid
-graph LR
-    subgraph WAS Layer
-        W1[WAS-1<br/>HikariCP]
-        W2[WAS-2<br/>HikariCP]
-        W3[WAS-N<br/>HikariCP]
-    end
-
-    subgraph PgPool Layer
-        PP1[PgPool-II<br/>Active]
-        PP2[PgPool-II<br/>Standby]
-    end
-
-    subgraph PostgreSQL Layer
-        PG_M[(PostgreSQL<br/>Primary)]
-        PG_R[(PostgreSQL<br/>Replica)]
-    end
-
-    W1 --> VIP[Virtual IP]
-    W2 --> VIP
-    W3 --> VIP
-    VIP --> PP1
-    PP1 -->|Write / Read| PG_M
-    PP1 -->|Read Only<br/>Load Balance| PG_R
-    PP1 -.->|Watchdog<br/>SPOF 방지| PP2
-    PG_M -->|WAL Streaming| PG_R
-```
-
-#### Primary / Replica 핵심 파라미터
+### 2.1 Primary / Replica 핵심 파라미터
 
 | 파라미터 | Primary | Replica | 역할 |
 |:---|:---:|:---:|:---|
@@ -147,16 +155,30 @@ graph LR
 | hot_standby | (해당 없음) | on | Replica 읽기 쿼리 수용. PgPool-II 읽기 분산 동작 필수 |
 | hot_standby_feedback | (해당 없음) | on | Replica 읽기 분산 시 Primary Vacuum에 의한 쿼리 취소(Conflict) 방지 |
 | archive_mode | always | always | WAL 아카이빙. Primary+Replica 모두 수행. Replica에서 직접 백업/계층형 복제 가능 |
-| max_connections | 100 | 100 | 최대 동시 클라이언트 연결. OOM 예방을 위해 100 고정 |
+| max_connections | 100 | 100 | 최대 동시 클라이언트 연결. OOM 예방을 위해 100 고정 (PgPool 연결 풀링 전제) |
 
 ### 2.2 RAM별 파라미터 매트릭스 (프로덕션 PgPool+SR)
 
-| DB 서버 RAM | shared_buffers | effective_cache_size | work_mem | maintenance_work_mem | wal_buffers | max_wal_size | max_wal_senders | max_connections |
-|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| 8 GB | 2 GB | 6 GB | 8 MB | 384 MB | 16 MB | 2 GB | 5 | 100 |
-| 16 GB | 4 GB | 12 GB | 16 MB | 1 GB | 16 MB | 4 GB | 5 | 100 |
-| 32 GB | 8 GB | 24 GB | 32 MB | 2 GB | 16 MB | 16 GB | 5 | 100 |
-| 64 GB | 16 GB | 48 GB | 64 MB | 4 GB | 16 MB | 32 GB | 5 | 100 |
+**Memory 그룹**
+
+| DB 서버 RAM | shared_buffers | effective_cache_size | work_mem | maintenance_work_mem | wal_buffers |
+|:---:|:---:|:---:|:---:|:---:|:---:|
+| 8 GB | 2 GB | 6 GB | 8 MB | 384 MB | 16 MB |
+| 16 GB | 4 GB | 12 GB | 16 MB | 1 GB | 16 MB |
+| 32 GB | 8 GB | 24 GB | 32 MB | 2 GB | 16 MB |
+| 64 GB | 16 GB | 48 GB | 64 MB | 4 GB | 16 MB |
+
+**WAL & Connections 그룹**
+
+| DB 서버 RAM | max_wal_size | min_wal_size | max_wal_senders | max_connections | superuser_reserved |
+|:---:|:---:|:---:|:---:|:---:|:---:|
+| 8 GB | 2 GB | 1 GB | 5 | 100 | 3 |
+| 16 GB | 4 GB | 1 GB | 5 | 100 | 3 |
+| 32 GB | 16 GB | 1 GB | 5 | 100 | 3 |
+| 64 GB | 32 GB | 1 GB | 5 | 100 | 3 |
+
+> work_mem 산정 상한(이론 참고치): `(RAM - shared_buffers) / (max_connections * 3)` (kofemann/pgtune). PostgreSQL 공식은 명시 공식이 없으나 "complex query = multiple concurrent operations" 경고에 근거. **위 매트릭스(8/16/32/64MB)는 운영 적용 표준값**으로, 이론 상한보다 보수적(OLTP/PgPool 환경 최적화). (2026-07-02 TA 결정, *8 폐기)
+> effective_cache_size는 실제 할당 아님(플래너 참고값, OS page cache 포함 추정치).
 
 ### 2.3 postgresql.conf 전문 (프로덕션, 8GB 기준)
 
@@ -166,8 +188,8 @@ graph LR
 # -------------------------------------------------------
 shared_buffers = 2GB                # RAM * 0.25
 effective_cache_size = 6GB          # RAM * 0.75
-work_mem = 8MB                     # (RAM - shared_buffers) / (max_conn * 8)
-maintenance_work_mem = 384MB        # RAM * 0.05
+work_mem = 8MB                     # 운영 표준값 (이론 상한: (RAM-shared_buffers)/(max_conn*3), kofemann/pgtune)
+maintenance_work_mem = 384MB        # RAM * 0.047~0.0625 (PGTune 기준)
 wal_buffers = 16MB                  # 고정
 
 # -------------------------------------------------------
@@ -217,7 +239,7 @@ effective_io_concurrency = 200
 
 ### 2.4 개발/테스트: Standalone
 
-> 본 구성은 개발 및 테스트 환경에 한해서만 허용. 프로덕션에서는 PgPool-II + Streaming Replication 구성(2.1절) 적용 필수.
+> 본 구성은 개발 및 테스트 환경에 한해서만 허용. 프로덕션에서는 PgPool-II + Streaming Replication 구성(0절 아키텍처) 적용 필수.
 
 #### 핵심 파라미터 차이 (PgPool+SR 대비)
 
@@ -242,7 +264,7 @@ effective_io_concurrency = 200
 
 ---
 
-## 3. 타임아웃 & 커넥션 설정
+## 3. 타임아웃 & 커넥션 캐스케이드
 
 ### 3.1 PostgreSQL 내부 타임아웃 Guardrails
 
@@ -302,21 +324,7 @@ DB max_connections = 100 (DB 서버 설정)
 
 ---
 
-## 4. 모니터링 체크리스트
-
-| 모니터링 항목 | 조회 방법 | 경고(Warning) | 위험(Critical) | 조치 |
-|:---|:---|:---|:---|:---|
-| Active Sessions | `SELECT count(*) FROM pg_stat_activity WHERE state = 'active'` | max_connections 70% | max_connections 85% | 커넥션 풀 설정 재검토 |
-| Slow Query | `pg_stat_statements` (>= 1s) | 발생 시 | 빈발 시 | 인덱스 추가 / 쿼리 튜닝 |
-| Replication Lag | `SELECT now() - pg_last_xact_replay_timestamp() FROM pg_stat_replication` | > 5s | > 30s | 네트워크/부하 점검, Replica 증설 검토 |
-| Dead Tuples | `SELECT n_dead_tup FROM pg_stat_user_tables` | 테이블 크기 10% | 테이블 크기 20% | VACUUM 강제 실행, autovacuum 조정 |
-| Cache Hit Ratio | `SELECT sum(blks_hit)::float / NULLIF(sum(blks_hit + blks_read), 0) FROM pg_stat_database` | < 99% | < 95% | shared_buffers 증설 검토 |
-| Lock Wait | `SELECT * FROM pg_locks WHERE NOT granted` | 대기 > 1s | 대기 > 5s | 트랜잭션 분석, lock_timeout 확인 |
-| Autovacuum 진행 상태 | `SELECT * FROM pg_stat_progress_vacuum` | 장시간 미실행 | Dead Tuple 누적 | autovacuum_vacuum_cost_limit 상향 |
-
----
-
-## 5. 검증 체크리스트
+## 4. 검증 체크리스트
 
 - [ ] shared_buffers <= RAM * 0.25 -- PostgreSQL 공식 권장 (위반 시: OOM, 커널 페이지 캐시 부족)
 - [ ] max_connections = 100 고정 -- OOM 예방 (위반 시: OOM 발생, DB 서버 다운)
@@ -333,3 +341,17 @@ DB max_connections = 100 (DB 서버 설정)
 - [ ] THP 영구 설정 적용 -- IT ONE 변경 요청 완료 여부 확인 (미적용 시: 리부팅 후 THP 활성화로 성능 저하)
 - [ ] systemd 서비스 LimitNOFILE/LimitNPROC override 설정 -- 서비스 데몬 ulimit 적용 (미적용 시: limits.conf 무시되어 기본값 1024로 동작)
 - [ ] Sum(maxPoolSize) <= DB max_conn * 0.7 (직접 연결 시) -- 70% Ceiling Rule (위반 시: 타 서비스 커넥션 고갈)
+
+---
+
+## 5. 모니터링 체크리스트
+
+| 모니터링 항목 | 조회 방법 | 경고(Warning) | 위험(Critical) | 조치 |
+|:---|:---|:---|:---|:---|
+| Active Sessions | `SELECT count(*) FROM pg_stat_activity WHERE state = 'active'` | max_connections 70% | max_connections 85% | 커넥션 풀 설정 재검토 |
+| Slow Query | `pg_stat_statements` (>= 1s) | 발생 시 | 빈발 시 | 인덱스 추가 / 쿼리 튜닝 |
+| Replication Lag | `SELECT now() - pg_last_xact_replay_timestamp() FROM pg_stat_replication` | > 5s | > 30s | 네트워크/부하 점검, Replica 증설 검토 |
+| Dead Tuples | `SELECT n_dead_tup FROM pg_stat_user_tables` | 테이블 크기 10% | 테이블 크기 20% | VACUUM 강제 실행, autovacuum 조정 |
+| Cache Hit Ratio | `SELECT sum(blks_hit)::float / NULLIF(sum(blks_hit + blks_read), 0) FROM pg_stat_database` | < 99% | < 95% | shared_buffers 증설 검토 |
+| Lock Wait | `SELECT * FROM pg_locks WHERE NOT granted` | 대기 > 1s | 대기 > 5s | 트랜잭션 분석, lock_timeout 확인 |
+| Autovacuum 진행 상태 | `SELECT * FROM pg_stat_progress_vacuum` | 장시간 미실행 | Dead Tuple 누적 | autovacuum_vacuum_cost_limit 상향 |

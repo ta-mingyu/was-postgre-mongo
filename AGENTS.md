@@ -51,8 +51,8 @@
 
 > 권위 계층: `reports/final/`(정본) > `-v3`(개별 최신) > `-v1/-v2`(이전). 상세는 structure.md.
 
-- [WAS Standard Guide V3](./reports/was-standard-guide-v3.md) | [V2](./reports/was-standard-guide-v2.md) | [V1](./reports/was-standard-guide.md)
-- [DB Standard Guide V3](./reports/db-standard-guide-v3.md) | [V2](./reports/db-standard-guide-v2.md) | [V1](./reports/db-standard-guide.md)
+- [WAS Standard Guide V4](./reports/was-standard-guide-v4.md) | [V3](./reports/was-standard-guide-v3.md) | [V2](./reports/was-standard-guide-v2.md) | [V1](./reports/was-standard-guide.md)
+- [DB Standard Guide V4](./reports/db-standard-guide-v4.md) | [V3](./reports/db-standard-guide-v3.md) | [V2](./reports/db-standard-guide-v2.md) | [V1](./reports/db-standard-guide.md)
 ## 학습 문서 (study/)
 
 - [TA 학습 커리큘럼](./study/README.md) -- 커리큘럼 인덱스 + 학습 경로 + 도메인 간 불변량 지도

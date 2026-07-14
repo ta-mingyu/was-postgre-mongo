@@ -4,6 +4,7 @@
 > **적용 범위**: WAS / PostgreSQL / MongoDB 프로덕션 환경 전반
 > **기준 인프라**: 4 Core CPU / 4~32 GB RAM (Apache 튜닝 가이드 기준과 동일)
 > **대상 플랫폼**: Apache Tomcat 9.x, Spring Boot 내장 Tomcat, IBM WebSphere Liberty 23.x, PostgreSQL, MongoDB
+> **버전**: v4 (2026-07-02 갱신 — TA 결정 4건: backend_weight 1:3 / maintenance_work_mem 상한 0.0625 / num_init_children 120 유지 / work_mem 공식 *3 통일+매트릭스 표준화. 가독성 구조 통일. Spring Boot 3.0 Breaking Change 정정. Kernel 6.19 주의 추가)
 
 ---
 
@@ -137,15 +138,15 @@ JAVA_OPTS="-Xms2560m -Xmx2560m \
 > - **Spring Boot 2.x**: 아래 매핑표에 따라 프로퍼티 키 및 값을 변환하여 적용
 > - **Spring (Non-Boot) / 전자정부프레임워크**: `application.yml` 프로퍼티가 아닌 `server.xml` 또는 `TomcatServletWebServerFactory` Bean 설정으로 직접 제어해야 함. 2.4.1절(Apache Tomcat 9.x 독립형)의 `server.xml` Connector 설정을 참조할 것
 
-> **Spring Boot 2.4.0을 기점으로 톰캣 스레드 제어 프로퍼티 키가 파괴적 변경(Breaking Change) 되었음.** Boot 2.x 환경에서는 반드시 현재 운영 중인 Boot 세부 버전을 확인한 후 올바른 키를 사용할 것.
+> **Spring Boot 3.0에서 구 프로퍼티 키(`server.tomcat.max-threads` 등)가 제거되고 `threads.*` 네임스페이스로 단일화되는 파괴적 변경(Breaking Change)이 있었음.** 단, `threads.max`/`threads.min-spare`는 **Boot 2.0부터 이미 사용 가능**했으며, Boot 2.x에서는 구 키와 신 키가 deprecated 병존 상태였음. Boot 2.x 환경에서는 운영 중인 세부 버전을 확인할 것. (2026-07-02 정정 — 기존 "2.4 기점" 표기는 사실 오류)
 
-| Boot 3.x (본 규정) | Boot 2.4+ | Boot 2.3 이하 | 비고 |
+| Boot 3.x (본 규정) | Boot 2.x (2.0~2.7) | Boot 1.x | 비고 |
 |:---|:---|:---|:---|
-| `server.tomcat.threads.max` | `server.tomcat.threads.max` | `server.tomcat.max-threads` | 2.4 미만에서는 `max-threads` 키 사용 |
-| `server.tomcat.threads.min-spare` | `server.tomcat.threads.min-spare` | `server.tomcat.min-spare-threads` | 동일한 Breaking Change 적용 |
-| `server.tomcat.connection-timeout: 20s` | `20000` (ms 정수) | `20000` (ms 정수) | Boot 2.x에서는 Duration 문자열 대신 밀리초 정수로 변환 |
-| `server.tomcat.keep-alive-timeout: 15s` | `15000` (ms 정수, **2.3.0+**) | Bean 오버라이드 필요 | Boot 2.3.0부터 프로퍼티 직접 지원 |
-| `server.tomcat.max-keep-alive-requests: 100` | `100` (**2.4.0+**) | Bean 오버라이드 필요 | Boot 2.4.0부터 프로퍼티 직접 지원 |
+| `server.tomcat.threads.max` | `server.tomcat.threads.max` | `server.tomcat.max-threads` | `threads.*` 네임스페이스는 Boot 2.0 도입. 구 키는 Boot 3.0에서 제거 |
+| `server.tomcat.threads.min-spare` | `server.tomcat.threads.min-spare` | `server.tomcat.min-spare-threads` | 동일 |
+| `server.tomcat.connection-timeout: 20s` | `20000` (ms 정수) | `20000` (ms 정수) | Boot 3.x는 Duration, Boot 2.x는 밀리초 정수 |
+| `server.tomcat.keep-alive-timeout: 15s` | `15000` (ms 정수, **2.5.0+**) | Bean 오버라이드 필요 | 프로퍼티 지원은 **Boot 2.5.0**부터 (기존 "2.3.0" 정정) |
+| `server.tomcat.max-keep-alive-requests: 100` | `100` (**2.4.0+**) | Bean 오버라이드 필요 | 프로퍼티 지원은 Boot 2.4.0부터 |
 
 #### 2.4.3 IBM WebSphere Liberty 23.x
 
@@ -354,6 +355,8 @@ vm.dirty_background_ratio = 5
 vm.dirty_ratio = 15
 ```
 
+> **Kernel 6.19 주의**: MongoDB 8.0.4 미만 버전에서 Linux Kernel 6.19 구동 시 알려진 오류가 있음. **MongoDB 8.0.4 이상 사용 권장**(공식 문서 확인). 커널 6.19 환경에서 8.0.4 미만 사용 금지.
+
 ```bash
 # THP (Transparent Huge Pages) 활성화 -- OS 리부팅 시 초기화되는 1회성 명령임.
 # 영구 설정은 root 권한이 필요하므로 IT ONE을 통해 IT 운영실에 변경 요청할 것.
@@ -505,8 +508,8 @@ graph LR
 # -------------------------------------------------------
 shared_buffers = 2GB                # RAM * 0.25
 effective_cache_size = 6GB          # RAM * 0.75
-work_mem = 8MB                     # (RAM - shared_buffers) / (max_conn * 8)
-maintenance_work_mem = 384MB        # RAM * 0.05
+work_mem = 8MB                     # 운영 표준값 (이론 상한: (RAM-shared_buffers)/(max_conn*3), kofemann/pgtune)
+maintenance_work_mem = 384MB        # RAM * 0.047~0.0625 (PGTune 기준)
 wal_buffers = 16MB                  # 고정
 
 # -------------------------------------------------------

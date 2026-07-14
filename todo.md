@@ -105,3 +105,13 @@
 - [x] linux/06 통합 튜닝 매트릭스/체크리스트 (역할별 차이·도메인 불변량 다리)
 - [x] 외부 리서치 반영 (Oracle 커리큘럼 컨설팅 + librarian kernel.org 문서: EEVDF/mTHP/somaxconn 기본 4096/tcp_tw_recycle 4.12 제거)
 - [x] AGENTS.md·study/README.md Linux 심화(프리퀄) 섹션 갱신
+
+## Phase 9: reports/final 표준값 검수 + 가독성 개편 + V4 버저닝 [Completed]
+
+- [x] 외부 리서치 기반 시효성 검증 (Oracle 가독성 진단 + librarian PostgreSQL/PgPool/MongoDB/WAS 최신값 검증)
+- [x] P0 사고위험: MongoDB 8.0.4 미만 + Kernel 6.19 사용 금지 경고 추가 (mongodb.md, final-standard-guide.md)
+- [x] 가독성 구조 통일: 4개 파일 0장(적용 전제) 신설, 검증(4)↔모니터링(5) 순서 교환, 3장 제목 "타임아웃 & 커넥션 캐스케이드" 통일, postgresql h4→h3, PG 매트릭스 분할, MongoDB limits 중복 제거, defaultMaxTimeMS cluster parameter 예시, pgpool 나이스M 사례 부록 이동, WAS 캐스케이드 3단계 확장
+- [x] TA 결정 4건 반영: backend_weight 1:3(harness 올림) / maintenance_work_mem 상한 0.0625(PGTune 정합) / num_init_children 120 유지+모니터링 강화 / work_mem 공식 *3 통일+매트릭스 표준화(8/16/32/64MB)
+- [x] P1 사실 오류 정정: Spring Boot "2.4 Breaking Change" -> 3.0 (was.md, final-standard-guide.md)
+- [x] verify-standards: harness/vendor-research.md 에 변경 이력 3건 기록 (2026-07-02)
+- [x] V4 버저닝: was-standard-guide-v4.md, db-standard-guide-v4.md 생성 + final-standard-guide.md 갱신 + AGENTS.md 링크 V3->V4
