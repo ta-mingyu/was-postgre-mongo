@@ -31,7 +31,7 @@ graph LR
 > **PSA 구조 치명적 제약**: 정산, 결제 등 트랜잭션 정합성이 필수인 도메인에는 PSA 구성 절대 금지. 반드시 PSS 구성 준수.
 
 - **70% Ceiling (WAS 직접 연결 시)**: `Sum(모든 WAS 인스턴스 maxPoolSize) <= maxIncomingConnections * 0.7`. 단 MongoDB는 기본 65,536으로, 사내 표준은 RAM별 차등(1,000~10,000) 적용
-- **방화벽 TCP 30min**: 모든 타임아웃의 최상위. WAS maxLifetime(27min) < MongoDB connectionPool maxIdleTimeMS(30min) < 방화벽(30min)
+- **방화벽 TCP 30~60min (범위, 최단 30min 기준 설계)**: 모든 타임아웃의 최상위. WAS maxLifetime(27min) < MongoDB connectionPool maxIdleTimeMS(30min) <= 방화벽 최단(30min). keepaliveTime(60s)이 주기적 ping으로 잔여 레이스 방어
 - **PostgreSQL과 MongoDB는 동일 호스트 병설 금지**: `vm.overcommit_memory` 설정이 PostgreSQL(2)과 MongoDB 8.0(1)에서 서로 충돌. 반드시 물리적으로 분리된 서버에서 운영
 
 ---
@@ -111,7 +111,10 @@ LimitNOFILE=1048576
 LimitNPROC=65536
 LimitFSIZE=infinity
 LimitCPU=infinity
+Environment=GLIBC_TUNABLES=glibc.pthread.rseq=0
 ```
+
+> **TCMalloc per-CPU cache 정상 동작 조건 (MongoDB 8.0+)**: THP always 외에 (1) **커널 4.18+**, (2) **glibc rseq 비활성**(`GLIBC_TUNABLES=glibc.pthread.rseq=0`, 위 systemd 환경변수)이 함께 충족되어야 per-CPU cache가 정상 작동. rseq를 끄지 않으면 glibc가 rseq를 선점해 TCMalloc per-CPU cache가 비활성화되어 THP 활성화의 성능 이점이 반감됨.
 
 ```bash
 # systemd 적용
@@ -324,6 +327,16 @@ MongoDB driver socketTimeoutMS (0 = 무제한, 애플리케이션 레벨 제어)
 ```
 
 > MongoDB는 논리 세션(localLogicalSessionTimeoutMinutes, 30min)과 물리 커넥션(Driver maxIdleTimeMS)의 이중 구조. HikariCP maxLifetime(27min)은 두 계층 모두보다 짧게 유지.
+>
+> **maxIdleTimeMS 설정 위치**: mongod.conf 항목이 **아님**. MongoDB **드라이버(WAS 측) 연결 풀 설정**이다.
+> - HikariCP(JDBC) 환경: maxIdleTimeMS 대신 **HikariCP maxLifetime(27min)** 이 실제 컨트롤 (was.md §3.1 참조)
+> - MongoDB Java Driver 직접 연동 시:
+>   ```java
+>   MongoClientSettings.builder()
+>     .applyToConnectionPoolSettings(b -> b.maxIdleTime(30, TimeUnit.MINUTES))
+>     .build()
+>   ```
+>   또는 연결 문자열: `mongodb://.../?maxIdleTimeMS=1800000`
 
 ### 3.2 유휴 세션 제한
 
@@ -390,3 +403,229 @@ maxIncomingConnections = RAM별 차등 (1,000~10,000)
 | 3 | Replication Lag 알림 (rs.printSecondaryReplicationInfo) | Lag > 5s 시 알림 수신 |
 | 4 | Active Session 임계치 알림 (db.serverStatus().connections.current) | maxIncoming 70% 도달 시 알림 수신 |
 | 5 | Cache Hit Ratio 추이 (db.serverStatus().wiredTiger.cache) | < 95% 시 알림 수신 확인 |
+
+---
+
+## 6. 운영서버 적용 가이드: 무중단 롤링 restart 절차
+
+> **검증 기준**: MongoDB 8.0 LTS 공식 문서 (perform-maintenance-on-replica-set-members, setParameter, rs.stepDown).
+> **전제 아키텍처**: §0의 Replica Set PSS (Primary 1 + Secondary 2).
+> **대칭 문서**: `reports/final/postgresql.md` §6, `reports/final/pgpool-ii.md` §6.
+
+MongoDB는 PostgreSQL/PgPool과 달리 **런타임 파라미터 변경 명령(`setParameter`, `setClusterParameter`, `setProfilingLevel`)을 풍부하게 제공**한다. 대부분의 튜닝이 restart 없이 적용 가능하며, Replica Set 환경에서는 노드별 롤링 restart로 무중단 유지보수가 가능하다.
+
+### 6.1 restart 시 서비스 영향
+
+`systemctl restart mongod`는 mongod 프로세스를 종료 후 재기동한다. 종료 시점에 해당 노드의 클라이언트 연결이 단절된다.
+
+```mermaid
+sequenceDiagram
+    participant Op as 운영자
+    participant M as mongod
+    participant RS as Replica Set
+    participant WAS as WAS (Driver)
+
+    Op->>M: systemctl restart mongod
+    Note over M: graceful shutdown
+    M-->>WAS: 해당 노드 커넥션 단절
+    alt Primary 노드인 경우
+        M->>RS: Primary 강등 (자동 또는 stepDown)
+        Note over RS: 새 Primary 선거<br/>electionTimeoutMillis=10s 내
+        WAS->>RS: 새 Primary로 재연결
+    else Secondary 노드인 경우
+        Note over RS: 과반수 유지<br/>서비스 영향 최소
+    end
+    Op->>M: 재기동
+    M->>RS: Secondary로 재편입<br/>oplog 동기화
+```
+
+- Secondary restart: 과반수 유지되어 쓰기 서비스 영향 없음 (읽기 분산 시 일시적 해당 노드 제외 가능).
+- Primary restart: `electionTimeoutMillis`(10s) 내 새 Primary 선출, 그 간 쓰기 일시 중단.
+- Standalone: 서비스 완전 중단 (선거 메커니즘 없음).
+
+### 6.2 파라미터 적용 경로 분류 (런타임 vs restart)
+
+MongoDB는 4가지 적용 경로가 있다.
+
+| 적용 경로 | 방법 | restart 필요? | 영구성 |
+|:---|:---|:---:|:---|
+| `setParameter` | `db.adminCommand({ setParameter: 1, ... })` | 아니오 | restart 시 mongod.conf 값으로 복원 (동기화 필요) |
+| `setClusterParameter` (8.0+) | `db.adminCommand({ setClusterParameter: ... })` | 아니오 | 클러스터 전체 영구 (config DB 저장) |
+| `setProfilingLevel` | `db.setProfilingLevel(1, { slowms: 100 })` | 아니오 | restart 시 mongod.conf 값으로 복원 |
+| `mongod.conf` 변경 | 파일 수정 후 restart | 예 | 영구 |
+
+§2.1/§2.4 표준 파라미터의 적용 경로 분류:
+
+| 파라미터 | 적용 경로 | restart 없이 변경? |
+|:---|:---|:---:|
+| `cacheSizeGB` | mongod.conf (storage.wiredTiger) | 아니오 |
+| `maxIncomingConnections` | mongod.conf (net) | 아니오 |
+| `net.bindIp` / `net.port` | mongod.conf (net) | 아니오 |
+| `replication.replSetName` | mongod.conf | 아니오 |
+| `security.keyFile` / `authorization` | mongod.conf | 아니오 |
+| `operationProfiling.mode` / `slowOpThresholdMs` | mongod.conf 또는 `db.setProfilingLevel()` | 예 (런타임) |
+| `internalQueryExecMaxBlockingSortBytes` | `setParameter` 또는 mongod.conf | 예 (런타임, 영구는 conf) |
+| `localLogicalSessionTimeoutMinutes` | `setParameter` 또는 mongod.conf | 예 (런타임, 영구는 conf) |
+| `defaultMaxTimeMS` (8.0+) | `setClusterParameter` | 예 (런타임, 영구) |
+| `electionTimeoutMillis` | `rs.reconfig()` | 예 (런타임) |
+| Write Concern / Read Preference | 드라이버 연결 문자열 | 예 (앱 수준) |
+
+> 핵심: `cacheSizeGB`, `maxIncomingConnections`, `bindIp`/`port`, 보안 설정은 restart 필요. Profiling, `setParameter`, cluster parameter는 런타임 변경 가능. 단, 런타임 변경(`setParameter`)은 restart 시 mongod.conf 값으로 복원되므로 **영구 적용을 원하면 mongod.conf에도 동일 값 기록 필수**.
+
+### 6.3 의사결정 플로우
+
+```mermaid
+flowchart TD
+    Q1{변경 파라미터가<br/>런타임 명령 가능?}
+    Q1 -->|예 setParameter/setClusterParameter| A[절차 A: 런타임 명령<br/>서비스 중단 없음]
+    Q1 -->|아니오 mongod.conf| Q2{아키텍처?}
+    Q2 -->|Replica Set PSS| B[절차 B: 롤링 restart<br/>Secondary -> stepDown -> Primary]
+    Q2 -->|Standalone| C[절차 C: restart<br/>downtime 수용]
+```
+
+### 6.4 절차 A: 런타임 명령 (서비스 영향 없음) — 1순위
+
+`cacheSizeGB`, `maxIncomingConnections`가 아닌 변경은 런타임 명령으로 해결한다. 대표적으로 `internalQueryExecMaxBlockingSortBytes`, `defaultMaxTimeMS`, profiling level, `localLogicalSessionTimeoutMinutes` 등.
+
+```javascript
+// mongosh 접속 (Primary에서 실행)
+
+// 1. setParameter -- 즉시 적용 (해당 노드만)
+db.adminCommand({ setParameter: 1, internalQueryExecMaxBlockingSortBytes: 67108864 })  // 64MB
+db.adminCommand({ setParameter: 1, localLogicalSessionTimeoutMinutes: 30 })
+
+// 2. setClusterParameter (8.0+) -- 클러스터 전체 영구 적용
+db.adminCommand({ setClusterParameter: { defaultMaxTimeMS: { readOperations: 60000 } } })
+
+// 3. Profiling Level
+db.setProfilingLevel(1, { slowms: 100 })
+
+// 4. 적용 확인
+db.adminCommand({ getParameter: 1, internalQueryExecMaxBlockingSortBytes: 1 })
+db.getProfilingStatus()
+```
+
+```bash
+# 5. (중요) 영구 적용을 위해 mongod.conf에도 동일 값 기록
+#    setParameter로 런타임 변경한 값은 restart 시 mongod.conf 값으로 복원됨
+#    각 노드의 mongod.conf setParameter 섹션에 동일 값 기록 필요
+```
+
+- 서비스 영향: 없음.
+- 주의: `setParameter`로 런타임 변경 후 mongod.conf를 동기화하지 않으면, 다음 restart 때 원래 값으로 복원된다. **영구 적용하려면 mongod.conf에도 기록 필수**.
+- Replica Set의 경우 `setParameter`는 각 노드별로 실행 필요 (`setClusterParameter`는 클러스터 전체 자동 전파이므로 Primary에서 1회).
+
+### 6.5 절차 B: Replica Set 롤링 restart (무중단)
+
+`cacheSizeGB`, `maxIncomingConnections` 등 mongod.conf 파라미터 변경 시. PSS(3노드) 환경에서 노드별로 순차 restart하며 항상 과반수(2노드)를 유지한다.
+
+```mermaid
+flowchart LR
+    S1[Secondary 1<br/>restart] --> W1[복제 동기화 대기<br/>lag=0 확인]
+    W1 --> S2[Secondary 2<br/>restart]
+    S2 --> W2[복제 동기화 대기<br/>lag=0 확인]
+    W2 --> SD[Primary<br/>rs.stepDown]
+    SD --> S3[구 Primary restart<br/>현재 Secondary]
+    S3 --> W3[복제 동기화 대기<br/>lag=0 확인]
+```
+
+상세 절차:
+
+```bash
+# 사전 점검: 복제 상태, oplog window 확인
+mongosh --host <primary> --eval '
+  rs.status();
+  rs.printSecondaryReplicationInfo();
+  db.printReplicationInfo();
+'
+
+# --- Secondary 1 restart ---
+# 1. Secondary 1에서 mongod.conf 수정 후 restart
+sudo systemctl restart mongod    # Secondary 1 서버
+
+# 2. Secondary 1이 SECONDARY 상태 + lag=0 확인 후 다음 진행
+mongosh --host <primary> --eval 'rs.status().members.filter(m => m.stateStr == "SECONDARY")'
+
+# --- Secondary 2 restart (동일 패턴) ---
+sudo systemctl restart mongod    # Secondary 2 서버
+# SECONDARY 상태 + lag=0 확인
+
+# --- Primary restart ---
+# 3. Primary를 Secondary로 강등 (새 Primary 선출 트리거)
+mongosh --host <primary> --eval 'rs.stepDown(60, 15)'
+#   stepDownSecs=60: 60초간 이 노드는 Primary 후보 제외
+#   secondaryCatchUpPeriodSecs=15: Secondary가 따라잡을 때까지 최대 15초 대기
+
+# 4. 새 Primary 선출 확인
+mongosh --eval 'rs.status().members.filter(m => m.stateStr == "PRIMARY")'
+
+# 5. 구 Primary(현재 Secondary)에서 mongod.conf 수정 후 restart
+sudo systemctl restart mongod    # 구 Primary 서버
+
+# 6. 전 노드 복구 확인 (PRIMARY 1 + SECONDARY 2, lag=0)
+mongosh --host <new_primary> --eval 'rs.printSecondaryReplicationInfo()'
+
+# 7. (선택) priority 조정으로 원래 Primary 역할 복귀
+mongosh --host <new_primary> --eval '
+  var cfg = rs.conf();
+  cfg.members[0].priority = 2;
+  cfg.members[1].priority = 1;
+  cfg.members[2].priority = 1;
+  rs.reconfig(cfg);
+'
+```
+
+- 서비스 영향: 쓰기 중단 없음 (stepDown 시 수 초~10초 선거 간격, 드라이버가 자동 재연결).
+- 과반수 유지: 항상 2노드 가동으로 쿼럼 보장.
+- 전제: PSS 3노드 구성. 2노드에서는 롤링 불가 (1노드 다운 시 과반수 상실).
+- 주의: 한 노드 restart 후 반드시 SECONDARY 상태 + lag=0 확인 후 다음 노드로 진행. **동시에 2노드 이상 restart 금지** (과반수 상실 → 선거 불가 → 서비스 중단).
+
+### 6.6 절차 C: Standalone restart (개발/테스트, downtime 수용)
+
+개발/테스트 환경의 Standalone은 복제/선거 메커니즘이 없어 롤링이 불가능하다.
+
+```bash
+# 1. mongod.conf 수정
+# 2. restart
+sudo systemctl restart mongod
+# 3. 기동 확인
+mongosh --eval 'db.adminCommand({ ping: 1 })'
+```
+
+- 서비스 영향: restart 동안 해당 인스턴스 전체 중단 (개발/테스트 환경이므로 허용).
+- 프로덕션 Standalone: 허용하지 않음 (§0 아키텍처 참조, 멀티 도큐먼트 트랜잭션 미지원).
+
+### 6.7 Replica Set 구성 정책 (PSS 의무)
+
+무중단 롤링 restart의 전제는 **PSS(Primary 1 + Secondary 2) 3노드 구성**이다.
+
+| 구성 | 롤링 restart 가능? | 사유 |
+|:---|:---:|:---|
+| PSS (3노드, 표준) | 예 | 1노드씩 restart, 항상 과반수(2) 유지 |
+| PSA (3노드, Arbiter 포함) | 제한적 | 데이터 보유 노드 2대. Secondary restart 시 데이터 노드 2->1, w:majority 쓰기 가능하나 내결함성 감소 |
+| 2노드 | 아니오 | 1노드 다운 시 과반수(2/2) 상실, 선거 불가 |
+| Standalone | 아니오 | 복제/선거 없음 |
+
+- **정산/결제 도메인: PSS 의무, PSA 절대 금지** (PSA에서 Secondary 다운 시 w:majority 쓰기 영구 stall).
+- 상세는 §0 PSS vs PSA 비교, `harness/mongodb-rules.md` §1 참조.
+
+### 6.8 버전 업그레이드 시 동일 패턴 적용
+
+MongoDB 버전 업그레이드(예: 8.0 -> 8.3) 시에도 절차 B와 동일한 롤링 패턴을 사용한다. 공식 권장 순서:
+
+1. Secondary 노드부터 순차 업그레이드 (구 버전 -> 신 버전 바이너리로 restart)
+2. 마지막 Primary를 `rs.stepDown()`으로 교체 후 업그레이드
+3. featureCompatibilityVersion 최신으로 상향 (`db.adminCommand({ setFeatureCompatibilityVersion: "8.3" })`)
+
+> 주의: Replica Set 내 버전 혼합 운영은 인접 메이저 버전까지만 허용 (예: 8.0 + 8.3 가능, 7.0 + 8.3 불가). 업그레이드 전 공식 호환성 매트릭스 확인 필수.
+
+### 6.9 절차 요약표
+
+| 상황 | 절차 | 서비스 중단 | 전제 조건 |
+|:---|:---|:---:|:---|
+| 런타임 명령 가능 파라미터 | A (`setParameter`/`setClusterParameter`) | 없음 | mongod.conf 동기화로 영구화 |
+| Replica Set mongod.conf 변경 | B (롤링: Secondary -> stepDown -> Primary) | 없음 (수 초 선거 간격) | PSS 3노드 |
+| Standalone mongod.conf 변경 | C (restart) | 전체 | 개발/테스트만 |
+| 버전 업그레이드 | B (롤링 패턴 동일) | 없음 | 인접 메이저 버전 호환성 확인 |
+
+> 핵심: MongoDB는 런타임 파라미터 변경 명령이 풍부하여 대부분의 튜닝이 restart 없이 가능 (절차 A). restart가 필요한 변경(`cacheSizeGB` 등)은 PSS Replica Set에서 롤링(절차 B), Standalone에서는 downtime 수용(절차 C). 런타임 변경 시 mongod.conf 동기화로 영구화하는 것을 잊지 말 것.

@@ -19,7 +19,7 @@ graph LR
 ```
 
 - **70% Ceiling**: `Sum(모든 WAS 인스턴스 maxPoolSize) <= DB max_connections * 0.7`
-- **방화벽 TCP 30min**: 모든 타임아웃의 최상위. WAS maxLifetime(27min)은 방화벽(30min)보다 짧아야 함
+- **방화벽 TCP 30~60min (범위, 최단 30min 기준 설계)**: 모든 타임아웃의 최상위. WAS maxLifetime(27min)은 방화벽 최단(30min)보다 짧아야 함. keepaliveTime(60s)이 주기적 ping으로 방화벽 유휴 타이머를 리셋해 잔여 레이스를 방어
 - **타임아웃 캐스케이드**: `WAS maxLifetime(27) < DB idle_session(30) < 방화벽(30)` (PgPool 경유 시 28min 단계 추가 — §3.2)
 
 ---
@@ -66,7 +66,7 @@ systemctl restart tomcat
 | 파라미터 | 값 | 역할 |
 |:---|:---|:---|
 | fs.file-max | 2,097,152 | 시스템 전체 FD 상한. 대규모 동시 접속 시 Too many open files 방지 |
-| net.core.somaxconn | 4,096 | OS 커널 TCP Listen Backlog. 트래픽 스파이크 시 패킷 Drop 방지 |
+| net.core.somaxconn | 4,096 | OS 커널 TCP Listen Backlog. **실제 accept 큐 = min(somaxconn, 앱 acceptCount)**. somaxconn만 올리고 §2.1 acceptCount(기본 100)를 올리지 않으면 큐는 100에 머물러 튜닝이 무의미 |
 | net.ipv4.tcp_max_syn_backlog | 4,096 | SYN Queue 상한. somaxconn과 세트로 설정 |
 | net.ipv4.tcp_keepalive_time | 300 (5분) | TCP Keepalive 최초 대기 시간. 기본 7,200초(2시간) 단축 |
 | net.ipv4.tcp_keepalive_intvl | 30 | Keepalive 프로브 재전송 간격. 기본 75초 단축 |
@@ -227,11 +227,11 @@ JAVA_OPTS="-Xms2560m -Xmx2560m \
                    purgePolicy="FailingConnectionOnly" />
 ```
 
-**방화벽 임계치(TCP 30분 / 1,800초) 검증 결과 반영**
+**방화벽 임계치(TCP 최단 30분 / 1,800초 기준) 검증 결과 반영**
 
 | 파라미터 | 변경 전 | 변경 후 | 설계 근거 |
 |:---|:---|:---|:---|
-| maxIdleTime | 1800s | 900s | 방화벽 타임아웃(1800s)의 50%로 단축. 유휴 커넥션 방화벽 Drop 전 안전 제거 |
+| maxIdleTime | 1800s | 900s | 방화벽 타임아웃 최단(1800s)의 50%로 단축. 유휴 커넥션 방화벽 Drop 전 안전 제거 |
 | agedTimeout | (미설정) | 1620s | PG idle_session_timeout(1800s)보다 180초 짧게. DB 강제 차단 방지 |
 | reapTime | 300s | 60s | 풀 정리 주기 단축. 만료 커넥션 신속 회수 |
 

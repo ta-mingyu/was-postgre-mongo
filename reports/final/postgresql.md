@@ -40,7 +40,7 @@ graph LR
 ```
 
 - **max_connections=100 고정은 PgPool-II 연결 풀링 전제**. WAS 직접 연결 시에는 70% Ceiling 산정 공식(`max_connections >= Sum(WAS maxPoolSize) * 1.5`)을 따를 것
-- **방화벽 TCP 30min**: 모든 타임아웃의 최상위. WAS maxLifetime(27min) < PgPool child_life_time(28min) < PG idle_session_timeout(30min) < 방화벽(30min)
+- **방화벽 TCP 30~60min (범위, 최단 30min 기준 설계)**: 모든 타임아웃의 최상위. WAS maxLifetime(27min) < PgPool child_life_time(28min) < PG idle_session_timeout(30min) <= 방화벽 최단(30min). keepaliveTime(60s)이 주기적 ping으로 잔여 레이스 방어
 - **PostgreSQL과 MongoDB는 동일 호스트 병설 금지**: `vm.overcommit_memory` 설정이 PostgreSQL(2)과 MongoDB 8.0(1)에서 서로 충돌. 반드시 물리적으로 분리된 서버에서 운영
 
 ---
@@ -275,7 +275,7 @@ effective_io_concurrency = 200
 | statement_timeout | 30,000ms (30s) | 실행 중인 쿼리(Active Query) 최대 지속 시간. 장기 실행 쿼리 리소스 독점 방지 |
 | lock_timeout | 10,000ms (10s) | Lock 획득 대기 최대 시간. 10초 초과 시 쿼리 자동 취소. lock_timeout < statement_timeout 유지 필수 |
 | idle_in_transaction_session_timeout | 60,000ms (60s) | BEGIN 후 쿼리 완료 후 유휴 상태 최대 시간. COMMIT/ROLLBACK 없이 방치 시 Lock 점유로 전파 장애 |
-| idle_session_timeout | 1,800,000ms (30min) | 클라이언트 유휴 세션 강제 종료. 연결 누수 및 좀비 세션으로부터 DB 자원 보호 |
+| idle_session_timeout | 1,800,000ms (30min) | 클라이언트 유휴 세션 강제 종료. 연결 누수 및 좀비 세션으로부터 DB 자원 보호. **PostgreSQL 14+(2021) 전용 파라미터** — PG 13 이하 환경에서는 미지원(미인식), TCP keepalive로 대체 방어 |
 
 ```
 PostgreSQL Session Timeout Guardrails
@@ -355,3 +355,211 @@ DB max_connections = 100 (DB 서버 설정)
 | Cache Hit Ratio | `SELECT sum(blks_hit)::float / NULLIF(sum(blks_hit + blks_read), 0) FROM pg_stat_database` | < 99% | < 95% | shared_buffers 증설 검토 |
 | Lock Wait | `SELECT * FROM pg_locks WHERE NOT granted` | 대기 > 1s | 대기 > 5s | 트랜잭션 분석, lock_timeout 확인 |
 | Autovacuum 진행 상태 | `SELECT * FROM pg_stat_progress_vacuum` | 장시간 미실행 | Dead Tuple 누적 | autovacuum_vacuum_cost_limit 상향 |
+
+---
+
+## 6. 운영서버 적용 가이드: 무중단 롤링 restart 절차
+
+> **검증 기준**: PostgreSQL 18 공식 문서 `pg_settings.context` 분류 (PG 14~17 동일).
+> **전제 아키텍처**: §0의 PgPool-II + Streaming Replication (Primary / Replica).
+
+`systemctl restart postgresql`은 postmaster 프로세스를 완전히 종료 후 재기동한다. 종료 시점에 모든 클라이언트 연결이 단절되며, PgPool-II 환경에서 Primary 노드의 경우 **자동 failover가 트리거**되는 심각한 운영 이벤트로 이어진다. 따라서 파라미터 변경 시 반드시 아래 의사결정 트리를 따른다.
+
+### 6.1 restart 시 서비스 영향
+
+```mermaid
+sequenceDiagram
+    participant Op as 운영자
+    participant SysD as systemd
+    participant PM as postmaster
+    participant BE as 백엔드 프로세스
+    participant WAS as WAS (HikariCP)
+
+    Op->>SysD: systemctl restart postgresql
+    SysD->>PM: SIGTERM (fast shutdown)
+    PM->>BE: SIGTERM 전파
+    Note over BE: 진행 중 트랜잭션<br/>강제 ROLLBACK
+    BE-->>WAS: 연결 종료
+    Note over WAS: 커넥션 단절<br/>SQL 실행 실패
+    PM->>PM: shared memory 해제
+    SysD->>PM: 재기동
+    PM->>WAS: 신규 연결 수용 개시
+```
+
+- downtime 구간: 활성 세션 정리 + 공유메모리 해제 + 재기동 = 수 초 ~ 수십 초
+- PgPool-II 환경 추가 위험: Primary 노드 종료 시 health_check 실패 → `failover_command` 실행 → Replica 승격 (복제 토폴로지 역전, 의도치 않은 페일오버)
+
+### 6.2 파라미터 context 분류 (reload vs restart 결정 기준)
+
+PostgreSQL 파라미터는 `pg_settings.context` 값으로 적용 시점이 결정된다.
+
+| context | 의미 | 적용 방법 |
+|:---|:---|:---|
+| `internal` | 변경 불가 (initdb/컴파일 시 고정) | - |
+| `postmaster` | 서버 시작 시에만 적용 | **restart 필요** |
+| `sighup` | postgresql.conf 수정 후 SIGHUP | reload |
+| `superuser-backend` | postgresql.conf(reload) 또는 연결 시 superuser | reload (신규 세션부터) |
+| `backend` | postgresql.conf(reload) 또는 연결 패킷 | reload (신규 세션부터) |
+| `user` | 세션 단위 | reload (신규 세션부터) |
+
+§2.3 표준 파라미터의 context 분류:
+
+| 파라미터 | context | reload 가능? |
+|:---|:---|:---:|
+| `shared_buffers` | postmaster | 아니오 |
+| `wal_buffers` | postmaster | 아니오 |
+| `wal_level` | postmaster | 아니오 |
+| `max_wal_senders` | postmaster | 아니오 |
+| `max_connections` | postmaster | 아니오 |
+| `superuser_reserved_connections` | postmaster | 아니오 |
+| `hot_standby` | postmaster | 아니오 |
+| `archive_mode` | postmaster | 아니오 |
+| `listen_addresses` | postmaster | 아니오 |
+| `effective_cache_size` | sighup | 예 |
+| `work_mem` | user | 예 |
+| `max_wal_size` / `min_wal_size` | sighup | 예 |
+| `checkpoint_completion_target` | sighup | 예 |
+| `statement_timeout` / `lock_timeout` | user | 예 |
+| `idle_in_transaction_session_timeout` | user | 예 |
+| `idle_session_timeout` | user | 예 |
+| `autovacuum` 및 `autovacuum_*` | sighup | 예 |
+| `random_page_cost` / `effective_io_concurrency` | user | 예 |
+| `hot_standby_feedback` | sighup | 예 |
+
+> 변경 후 `SELECT name, setting, pending_restart FROM pg_settings WHERE pending_restart;`로 restart 대기 항목을 확인한다. `pending_restart = true`인 파라미터는 restart 전까지 신규 값이 반영되지 않는다.
+
+### 6.3 의사결정 플로우
+
+```mermaid
+flowchart TD
+    Q1{변경 파라미터가<br/>reload 가능?}
+    Q1 -->|예 sighup/user| A[절차 A: Reload<br/>서비스 중단 없음]
+    Q1 -->|아니오 postmaster| Q2{어느 노드?}
+    Q2 -->|Replica만| B[절차 B: Replica 롤링<br/>detach-restart-attach]
+    Q2 -->|Primary 포함| Q3{쓰기 중단 허용?}
+    Q3 -->|불가| C[절차 C: Switchover<br/>무중단, 복잡]
+    Q3 -->|수 초 허용| D[절차 D: backend_flag 방어<br/>detach-restart-attach]
+```
+
+### 6.4 절차 A: Reload (서비스 영향 없음)
+
+대부분의 튜닝(타임아웃, autovacuum, work_mem, effective_cache_size, random_page_cost 등)은 reload로 완결된다. PgPool-II 영향 없음.
+
+```bash
+# 1. postgresql.conf 또는 ALTER SYSTEM 으로 파라미터 변경
+
+# 2. reload (노드별 각각 실행, 순서 무관)
+sudo systemctl reload postgresql
+# 또는
+sudo -u postgres psql -c "SELECT pg_reload_conf();"
+
+# 3. 적용 확인 (pending_restart=true 가 없어야 완료)
+sudo -u postgres psql -c "SELECT name, setting, pending_restart FROM pg_settings WHERE pending_restart;"
+```
+
+### 6.5 절차 B: Replica 노드 롤링 restart
+
+`shared_buffers`, `max_connections` 등 postmaster 파라미터 변경이 **Replica 노드에만** 필요한 경우. 읽기 트래픽이 일시적으로 Primary로 우회되나 서비스 중단은 없다.
+
+```bash
+# 노드 ID 사전 확인 (보통 Primary=0, Replica=1)
+pcp_node_info -h <pgpool_vip> -p 9898 -U pgpool -n 1
+
+# 1. Replica를 PgPool 관리에서 분리 (읽기 트래픽 Primary로 우회)
+pcp_detach_node -h <pgpool_vip> -p 9898 -U pgpool -n 1
+
+# 2. 복제 지연이 0에 수렴했는지 확인
+sudo -u postgres psql -h <primary> -c \
+  "SELECT application_name, state, sync_state,
+          pg_wal_lsn_diff(sent_lsn, replay_lsn) AS lag_bytes
+   FROM pg_stat_replication;"
+
+# 3. Replica restart
+sudo systemctl restart postgresql
+
+# 4. Replica가 Primary에 재연결하여 복제 재개했는지 확인
+sudo -u postgres psql -h <replica> -c "SELECT pg_is_in_recovery(), pg_last_wal_receive_lsn();"
+
+# 5. PgPool에 재편입
+pcp_attach_node -h <pgpool_vip> -p 9898 -U pgpool -n 1
+```
+
+- 서비스 영향: 쓰기 중단 없음. 읽기 처리량 일시적 저하 가능.
+- failover 위험: 없음.
+
+### 6.6 절차 C: Primary 노드 Switchover (무중단, 권장)
+
+쓰기 중단을 허용할 수 없는 미션 크리티컬 환경. Replica를 새 Primary로 승격시키고 구 Primary를 재시작 후 새 Replica로 편입시킨다. DBA 사전 검증 필수.
+
+```bash
+# 1. 사전 점검: 복제 지연 0, Replica 승격 가능 상태
+sudo -u postgres psql -h <primary> -c \
+  "SELECT state, sync_state,
+          pg_wal_lsn_diff(sent_lsn, replay_lsn) AS lag_bytes
+   FROM pg_stat_replication;"
+
+# 2. 계획된 switchover (PgPool이 트래픽을 Replica로 전환)
+#    -s: failover_command 트리거, -g: graceful (클라이언트 연결 정리 대기)
+pcp_promote_node -h <pgpool_vip> -p 9898 -U pgpool -n 1 -s -g
+
+# 3. 구 Primary(현재 down 상태) restart
+sudo systemctl restart postgresql
+
+# 4. 구 Primary를 새 Replica로 재구성
+#    primary_conninfo가 신규 Primary(구 Replica)를 가리키도록 변경
+#    pg_rewind 사용 권장 (분기 이력 정합)
+sudo -u postgres pg_rewind --target-pgdata=/var/lib/pgsql/data \
+  --source-server="host=<new_primary> ..."
+
+# 5. standby 기동 후 PgPool에 새 Replica로 편입
+pcp_attach_node -h <pgpool_vip> -p 9898 -U pgpool -n 0
+```
+
+- 서비스 영향: 쓰기 중단 없음 (PgPool이 switchover 중 트래픽 큐잉/전환).
+- 복잡도: 높음. pg_rewind 동작, 복제 재설정 사전 검증 필수.
+
+### 6.7 절차 D: Primary 노드 backend_flag 방어 (짧은 쓰기 중단 허용)
+
+수 초~수십 초의 쓰기 중단을 허용할 수 있는 경우의 간소 절차. `backend_flag = DISALLOW_TO_FAILOVER`로 의도치 않은 failover를 억제한다. PgPool-II 공식 문서(server-temporarily-shutdown)가 제시하는 방법.
+
+```bash
+# 1. pgpool.conf 에 backend_flag0 = DISALLOW_TO_FAILOVER 추가 (Primary = node 0)
+#    reload
+sudo systemctl reload pgpool
+
+# 2. 노드 detach (트래픽 차단)
+pcp_detach_node -h <pgpool_vip> -p 9898 -U pgpool -n 0
+
+# 3. Primary restart
+sudo systemctl restart postgresql
+
+# 4. 재편입
+pcp_attach_node -h <pgpool_vip> -p 9898 -U pgpool -n 0
+
+# 5. backend_flag 복원 (필수 - 미복원 시 실장애 때 자동 복구 불가)
+#    backend_flag0 = ALLOW_TO_FAILOVER
+sudo systemctl reload pgpool
+```
+
+- 서비스 영향: restart 동안 쓰기 실패 (수 초~수십 초). 읽기는 Replica에서 계속.
+- 주의: 5번 복원 누락 시 실장애 발생 시 자동 failover가 동작하지 않는다.
+
+### 6.8 PgPool-II 보조 설정 (롤링 운영 정책)
+
+§0 PgPool 가이드의 표준 `pgpool.conf`에는 아래 두 값이 명시되어 있지 않다. 롤링 운영 Runbook 마련 시 정책으로 확정한다.
+
+| 파라미터 | 역할 | 제안 |
+|:---|:---|:---|
+| `failover_on_backend_shutdown` | PostgreSQL 정상 shutdown 시 failover 여부. off면 관리자 종료/restart에 failover 억제 (crash에는 여전히 failover) | off 검토 (PgPool-II 4.3+) |
+| `backend_flag{N}` | 노드별 failover 허용/금지. `DISALLOW_TO_FAILOVER`로 계획된 유지보수 중 failover 차단 | Runbook에서 토글 사용 |
+
+### 6.9 절차 요약표
+
+| 상황 | 절차 | 서비스 중단 | 복잡도 |
+|:---|:---|:---:|:---:|
+| reload 가능 파라미터 | A (reload) | 없음 | 낮 |
+| Replica만 restart | B (detach-restart-attach) | 없음 (읽기 성능 저하 가능) | 중 |
+| Primary restart, 쓰기 중단 불가 | C (switchover) | 없음 | 높 |
+| Primary restart, 수 초 허용 | D (backend_flag) | 쓰기 수 초~수십 초 | 중 |
+
+> 핵심: "PgPool이 있으니 노드별로 그냥 restart"는 틀린 접근. Replica는 롤링이 가능하나, Primary는 switchover 설계 없이 restart하면 자동 failover가 트리거된다. 변경 파라미터가 reload로 반영되는지 먼저 확인하는 것이 1순위.

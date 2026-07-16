@@ -2,7 +2,7 @@
 
 > **기준 문서**: `reports/final-standard-guide.md`
 > **통합 본**. 각 서버별 상세 정본은 `reports/final/{postgresql,pgpool-ii,mongodb}.md` 참조.
-> **버전**: v4 (2026-07-02 갱신 — TA 결정 4건 + 가독성 구조 통일 + Spring Boot 3.0 정정 + work_mem 공식 *3 통일)
+> **버전**: v4 (2026-07-03 갱신 — 방화벽 30~60min 정정, MongoDB glibc rseq/maxIdleTimeMS 보완, idle_session PG14+ 명시, somaxconn↔acceptCount 관계)
 
 ---
 
@@ -48,7 +48,7 @@ graph LR
 ```
 
 - **max_connections=100 고정은 PgPool-II 연결 풀링 전제**. WAS 직접 연결 시에는 70% Ceiling 산정 공식(`max_connections >= Sum(WAS maxPoolSize) * 1.5`)을 따를 것
-- **방화벽 TCP 30min**: 모든 타임아웃의 최상위. WAS maxLifetime(27min) < PgPool child_life_time(28min) < PG idle_session_timeout(30min) < 방화벽(30min)
+- **방화벽 TCP 30~60min (범위, 최단 30min 기준 설계)**: 모든 타임아웃의 최상위. WAS maxLifetime(27min) < PgPool child_life_time(28min) < PG idle_session_timeout(30min) <= 방화벽 최단(30min). keepaliveTime(60s)이 주기적 ping으로 잔여 레이스 방어
 - **PostgreSQL과 MongoDB는 동일 호스트 병설 금지**: `vm.overcommit_memory` 설정이 PostgreSQL(2)과 MongoDB 8.0(1)에서 서로 충돌. 반드시 물리적으로 분리된 서버에서 운영
 
 ---
@@ -283,7 +283,7 @@ effective_io_concurrency = 200
 | statement_timeout | 30,000ms (30s) | 실행 중인 쿼리(Active Query) 최대 지속 시간. 장기 실행 쿼리 리소스 독점 방지 |
 | lock_timeout | 10,000ms (10s) | Lock 획득 대기 최대 시간. 10초 초과 시 쿼리 자동 취소. lock_timeout < statement_timeout 유지 필수 |
 | idle_in_transaction_session_timeout | 60,000ms (60s) | BEGIN 후 쿼리 완료 후 유휴 상태 최대 시간. COMMIT/ROLLBACK 없이 방치 시 Lock 점유로 전파 장애 |
-| idle_session_timeout | 1,800,000ms (30min) | 클라이언트 유휴 세션 강제 종료. 연결 누수 및 좀비 세션으로부터 DB 자원 보호 |
+| idle_session_timeout | 1,800,000ms (30min) | 클라이언트 유휴 세션 강제 종료. 연결 누수 및 좀비 세션으로부터 DB 자원 보호. **PostgreSQL 14+(2021) 전용 파라미터** — PG 13 이하 환경에서는 미지원(미인식), TCP keepalive로 대체 방어 |
 
 ```
 PostgreSQL Session Timeout Guardrails
@@ -407,7 +407,7 @@ graph LR
 ```
 
 - **커넥션 풀링으로 70% Ceiling 대체**: PgPool 환경에서는 직접 연결의 70% Ceiling Rule이 PgPool-II의 연결 풀링으로 대체됨. WAS 풀 합산이 num_init_children을 초과해도 PgPool Listen Queue가 초과분을 안전하게 흡수
-- **타임아웃 캐스케이드**: `WAS maxLifetime(27min) < PgPool child_life_time(28min) < PG idle_session_timeout(30min) < 방화벽(30min)` (엄격 부등호)
+- **타임아웃 캐스케이드**: `WAS maxLifetime(27min) < PgPool child_life_time(28min) < PG idle_session_timeout(30min) <= 방화벽 최단(30min)` (방화벽은 30~60min 범위, 최단 30min 기준 설계. keepalive 60s로 잔여 레이스 방어)
 - **kernel.sem 선행 필수**: `num_init_children=120` 구동 시 세마포어 상한 필수. 미설정 시 구동 실패
 
 ---
@@ -677,7 +677,7 @@ graph LR
 > **PSA 구조 치명적 제약**: 정산, 결제 등 트랜잭션 정합성이 필수인 도메인에는 PSA 구성 절대 금지. 반드시 PSS 구성 준수.
 
 - **70% Ceiling (WAS 직접 연결 시)**: `Sum(모든 WAS 인스턴스 maxPoolSize) <= maxIncomingConnections * 0.7`. 단 MongoDB는 기본 65,536으로, 사내 표준은 RAM별 차등(1,000~10,000) 적용
-- **방화벽 TCP 30min**: 모든 타임아웃의 최상위. WAS maxLifetime(27min) < MongoDB connectionPool maxIdleTimeMS(30min) < 방화벽(30min)
+- **방화벽 TCP 30~60min (범위, 최단 30min 기준 설계)**: 모든 타임아웃의 최상위. WAS maxLifetime(27min) < MongoDB connectionPool maxIdleTimeMS(30min) <= 방화벽 최단(30min). keepaliveTime(60s)이 주기적 ping으로 잔여 레이스 방어
 - **PostgreSQL과 MongoDB는 동일 호스트 병설 금지**: `vm.overcommit_memory` 설정이 PostgreSQL(2)과 MongoDB 8.0(1)에서 서로 충돌. 반드시 물리적으로 분리된 서버에서 운영
 
 ---
@@ -757,7 +757,10 @@ LimitNOFILE=1048576
 LimitNPROC=65536
 LimitFSIZE=infinity
 LimitCPU=infinity
+Environment=GLIBC_TUNABLES=glibc.pthread.rseq=0
 ```
+
+> **TCMalloc per-CPU cache 정상 동작 조건 (MongoDB 8.0+)**: THP always 외에 (1) **커널 4.18+**, (2) **glibc rseq 비활성**(`GLIBC_TUNABLES=glibc.pthread.rseq=0`, 위 systemd 환경변수)이 함께 충족되어야 per-CPU cache가 정상 작동. rseq를 끄지 않으면 glibc가 rseq를 선점해 TCMalloc per-CPU cache가 비활성화되어 THP 활성화의 성능 이점이 반감됨.
 
 ```bash
 # systemd 적용
@@ -970,6 +973,16 @@ MongoDB driver socketTimeoutMS (0 = 무제한, 애플리케이션 레벨 제어)
 ```
 
 > MongoDB는 논리 세션(localLogicalSessionTimeoutMinutes, 30min)과 물리 커넥션(Driver maxIdleTimeMS)의 이중 구조. HikariCP maxLifetime(27min)은 두 계층 모두보다 짧게 유지.
+>
+> **maxIdleTimeMS 설정 위치**: mongod.conf 항목이 **아님**. MongoDB **드라이버(WAS 측) 연결 풀 설정**이다.
+> - HikariCP(JDBC) 환경: maxIdleTimeMS 대신 **HikariCP maxLifetime(27min)** 이 실제 컨트롤 (was.md §3.1 참조)
+> - MongoDB Java Driver 직접 연동 시:
+>   ```java
+>   MongoClientSettings.builder()
+>     .applyToConnectionPoolSettings(b -> b.maxIdleTime(30, TimeUnit.MINUTES))
+>     .build()
+>   ```
+>   또는 연결 문자열: `mongodb://.../?maxIdleTimeMS=1800000`
 
 ### 3.2 유휴 세션 제한
 

@@ -115,3 +115,30 @@
 - [x] P1 사실 오류 정정: Spring Boot "2.4 Breaking Change" -> 3.0 (was.md, final-standard-guide.md)
 - [x] verify-standards: harness/vendor-research.md 에 변경 이력 3건 기록 (2026-07-02)
 - [x] V4 버저닝: was-standard-guide-v4.md, db-standard-guide-v4.md 생성 + final-standard-guide.md 갱신 + AGENTS.md 링크 V3->V4
+
+## Phase 10: PostgreSQL 롤링 restart 운영 Runbook 추가 [Completed]
+
+- [x] `reports/final/postgresql.md` §6 "유지보수: 무중단 롤링 restart 절차" 추가 (PostgreSQL 18 기준, PG 14~17 동일)
+  - [x] restart 시 서비스 영향 시퀀스 다이어그램 (SIGTERM → 백엔드 종료 → 커넥션 단절)
+  - [x] 파라미터 context 분류 표 (pg_settings.context: postmaster=restart / sighup,user=reload)
+  - [x] 절차 A: Reload / B: Replica detach-restart-attach / C: Primary switchover / D: backend_flag 방어
+  - [x] PgPool-II 보조 설정 (failover_on_backend_shutdown, backend_flag)
+- [x] `harness/postgresql-rules.md` §7 검증 체크리스트 3건 추가 (항목 11/12/13: 롤링 절차 준수 / Primary restart 전 failover 억제 / reload 우선)
+
+## Phase 11: PgPool-II 운영서버 적용 가이드 + 이중화 정책 추가 [Completed]
+
+- [x] `reports/final/pgpool-ii.md` §0 에 이중화 의무 정책 추가 (1대 운영 시 2대 증설 필수, 오버엔지니어링 우려 시 IT기획실 문의)
+- [x] `reports/final/pgpool-ii.md` §6 "운영서버 적용 가이드: 무중단 롤링 restart 절차" 추가 (PostgreSQL §6와 대칭)
+  - [x] 파라미터 reload vs restart 분류 표 (num_init_children/max_pool/watchdog = restart)
+  - [x] 절차 A: pcp_reload_config / B: 단일 restart (downtime 수용) / C: 이중화 VIP 페일오버 롤링
+  - [x] 이중화 운영 정책 (§6.7): 2대 표준, 1대->2대 증설 의무, IT기획실 예외 승인
+- [x] `reports/final/postgresql.md` §6 제목을 "운영서버 적용 가이드: 무중단 롤링 restart 절차"로 변경 (PgPool 문서와 대칭)
+- [x] `harness/postgresql-rules.md` §3.3 + §7 체크리스트 항목 14: PgPool-II 2대 이중화 의무 추가 (1대->2대 증설, IT기획실 예외 승인)
+
+## Phase 12: MongoDB 운영서버 적용 가이드 추가 [Completed]
+
+- [x] `reports/final/mongodb.md` §6 "운영서버 적용 가이드: 무중단 롤링 restart 절차" 추가 (MongoDB 8.0 LTS 기준)
+  - [x] 파라미터 적용 경로 4종 분류 표 (setParameter / setClusterParameter / setProfilingLevel / mongod.conf)
+  - [x] 절차 A: 런타임 명령 (setParameter 등) / B: Replica Set 롤링 (Secondary -> stepDown -> Primary) / C: Standalone restart
+  - [x] Replica Set 구성 정책 (PSS 의무, PSA 금지, 2노드 롤링 불가)
+  - [x] 버전 업그레이드 시 동일 롤링 패턴 적용 (8.0->8.3)

@@ -133,6 +133,8 @@ backend_weight1 = 3  # Replica (Primary 1 : Replica 3 = 25%:75%, 읽기 부하 R
 - `use_watchdog = on` -- SPOF 방지 (VIP 기반)
 - `failover_command` 지정 -- Primary 다운 시 Replica 승격 스크립트
 
+> **이중화 의무 (표준 2대)**: PgPool-II 단일 구성은 SPOF. 표준은 Active+Standby 2대(Watchdog VIP 이중화). **1대 운영 중인 곳은 2대로 증설 필수**. 서비스 규모가 작아 오버엔지니어링 우려 시 **IT기획실 문의** (예외 승인 후 단일 유지 가능). 상세 절차는 `reports/final/pgpool-ii.md` §6.7.
+
 ### 3.4 4GB RAM 독립 서버 제약
 
 PgPool-II 전용 서버가 4GB RAM인 경우:
@@ -240,6 +242,10 @@ DB max_connections = X
 | 8 | PgPool `reserved_connections` >= 1 | 장애 시 DBA 접속 보장 |
 | 9 | PgPool `max_pool` = 1 (단일 DB/계정) | 불필요한 커넥션 폭증 방지 |
 | 10 | Sum(maxPoolSize) <= DB max_conn * 0.7 | 70% Ceiling |
+| 11 | postmaster context 파라미터(shared_buffers, max_connections, wal_buffers, wal_level, max_wal_senders, archive_mode 등) 변경 시 PgPool detach/attach 롤링 절차 준수 | 무중단 restart (상세: `reports/final/postgresql.md` §6) |
+| 12 | Primary 노드 restart 전 `pcp_promote_node -s` switchover 또는 `backend_flag{N} = DISALLOW_TO_FAILOVER` 설정 | 의도치 않은 자동 failover 방지 (미준수 시: Replica 승격, 복제 토폴로지 역전) |
+| 13 | reload 가능 파라미터(sighup/user context) 변경 시 `systemctl reload postgresql` 우선, `pending_restart` 조회로 restart 필요성 사전 확인 | 불필요한 서비스 중단 회피 |
+| 14 | PgPool-II 2대(Active+Standby) 이중화 구성 (단일 구성 시 2대 증설 또는 IT기획실 예외 승인) | SPOF 제거, 무중단 유지보수 가능 (`reports/final/pgpool-ii.md` §6.7) |
 
 ---
 
