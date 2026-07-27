@@ -142,3 +142,29 @@
   - [x] 절차 A: 런타임 명령 (setParameter 등) / B: Replica Set 롤링 (Secondary -> stepDown -> Primary) / C: Standalone restart
   - [x] Replica Set 구성 정책 (PSS 의무, PSA 금지, 2노드 롤링 불가)
   - [x] 버전 업그레이드 시 동일 롤링 패턴 적용 (8.0->8.3)
+
+## Phase 13: Spring Boot 4.x 호환성 명시 [Completed]
+
+- [x] Spring Boot 4.0(2025-11-20 GA) 외부 리서치 (Release Notes, Configuration Changelog, HikariCP 7.0 CHANGES 교차 검증)
+  - [x] 확인: `server.tomcat.*` 튜닝 프로퍼티 키 3.x와 동일 (threads.max/min-spare, max-connections, accept-count, connection-timeout, keep-alive-timeout, max-keep-alive-requests)
+  - [x] 확인: HikariCP 7.0 메이저 상승 사유는 API 추가 (HikariCredentialsProvider), config key 동일
+  - [x] 확인: 번들 버전 상승만 — 내장 Tomcat 10.1->11.0, HikariCP->7.0, Java 17+ baseline
+- [x] V5 버저닝: was-standard-guide-v5.md 생성 + final/was.md 정본 동기화
+- [x] final-standard-guide.md 통합 정본 Spring Boot 섹션 + 헤더 동기화
+- [x] AGENTS.md 버전 히스토리 링크 V4 -> V5 + 권위 계층 갱신
+
+## Phase 14: Web 서버(Apache) 정본 가이드 작성 [Completed]
+
+- [x] `reports/final/web.md` 신규 작성 (사내 Apache 튜닝 가이드 V3.1 기반, was.md 정본 포맷 차용)
+  - [x] §0 적용 전제: Web→WAS→DB mermaid + 방화벽 30min 타임아웃 캐스케이드 정렬
+  - [x] §1 OS 커널 설정: WAS/DB 정본과 정렬(fs.file-max 2097152, somaxconn 4096) + systemd LimitNOFILE/LimitNPROC drop-in
+  - [x] §2 MPM 선택 & 핵심 원칙: Event 기본, 전략 A/B 분기, Scoreboard/Thrashing Guard 검증
+  - [x] §3 Event 표준 매트릭스: 전략 A/B × RAM 4/8/16/32GB
+  - [x] §4 Worker/Prefork 매트릭스(참고용)
+  - [x] §5 공통 설정(ThreadStackSize, KeepAliveTimeout, ListenBacklog, MaxConnectionsPerChild)
+  - [x] §6 다중 인스턴스 환경: Port Exhaustion + IP Aliasing + 충돌 방지 체크리스트
+  - [x] §7 reload vs restart
+  - [x] §8 주의사항: 원본 V3.1 정정 8건 + 혼합 용도 서버(Web+WAS, Web+DB, Web+캐시, L4 NAT) + 역방향 프록시 타임아웃 정렬 + 보안 기본
+  - [x] §9 검증 체크리스트 (18건)
+  - [x] §10 모니터링 체크리스트
+- [x] AGENTS.md "서버별 실무 배포 가이드" 섹션에 web.md 링크 추가(WAS 직전)

@@ -42,6 +42,7 @@
 
 ### 서버별 실무 배포 가이드 (정본, 운영자용)
 
+- [Web 서버 설정 가이드](./reports/final/web.md) -- Apache HTTP Server 2.4 + Event/Worker/Prefork MPM + 역방향 프록시 + 혼합 용도 주의사항
 - [WAS 서버 설정 가이드](./reports/final/was.md) -- OS 커널 + Tomcat/Spring Boot/WebSphere + HikariCP + 체크리스트
 - [PostgreSQL 서버 설정 가이드](./reports/final/postgresql.md) -- OS 커널 + PgPool+SR/Standalone + 타임아웃 Guardrails
 - [PgPool-II 서버 설정 가이드](./reports/final/pgpool-ii.md) -- 커넥션 풀링/로드밸런싱/페일오버 + 체크리스트
@@ -49,9 +50,9 @@
 
 ## 버전 히스토리 (참조용)
 
-> 권위 계층: `reports/final/`(정본) > `-v3`(개별 최신) > `-v1/-v2`(이전). 상세는 structure.md.
+> 권위 계층: `reports/final/`(정본) > 최신 `-v{N}`(개별 최신: WAS v5 / DB v4) > 이전 버전. 상세는 structure.md.
 
-- [WAS Standard Guide V4](./reports/was-standard-guide-v4.md) | [V3](./reports/was-standard-guide-v3.md) | [V2](./reports/was-standard-guide-v2.md) | [V1](./reports/was-standard-guide.md)
+- [WAS Standard Guide V5](./reports/was-standard-guide-v5.md) | [V4](./reports/was-standard-guide-v4.md) | [V3](./reports/was-standard-guide-v3.md) | [V2](./reports/was-standard-guide-v2.md) | [V1](./reports/was-standard-guide.md)
 - [DB Standard Guide V4](./reports/db-standard-guide-v4.md) | [V3](./reports/db-standard-guide-v3.md) | [V2](./reports/db-standard-guide-v2.md) | [V1](./reports/db-standard-guide.md)
 ## 학습 문서 (study/)
 

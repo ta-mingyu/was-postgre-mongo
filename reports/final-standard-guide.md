@@ -3,8 +3,8 @@
 > **배포**: IT기획실 → 전 사업팀
 > **적용 범위**: WAS / PostgreSQL / MongoDB 프로덕션 환경 전반
 > **기준 인프라**: 4 Core CPU / 4~32 GB RAM (Apache 튜닝 가이드 기준과 동일)
-> **대상 플랫폼**: Apache Tomcat 9.x, Spring Boot 내장 Tomcat, IBM WebSphere Liberty 23.x, PostgreSQL, MongoDB
-> **버전**: v4 (2026-07-02 갱신 — TA 결정 4건: backend_weight 1:3 / maintenance_work_mem 상한 0.0625 / num_init_children 120 유지 / work_mem 공식 *3 통일+매트릭스 표준화. 가독성 구조 통일. Spring Boot 3.0 Breaking Change 정정. Kernel 6.19 주의 추가)
+> **대상 플랫폼**: Apache Tomcat 9.x, Spring Boot 내장 Tomcat (3.x / 4.x), IBM WebSphere Liberty 23.x, PostgreSQL, MongoDB
+> **버전**: v5 (2026-07-22 갱신 — Spring Boot 4.x 호환성 명시: 튜닝 프로퍼티 키 3.x와 동일, 내장 Tomcat 11.0/HikariCP 7.0 번들 상승만. v4: 2026-07-02 TA 결정 4건 + 가독성 구조 통일)
 
 ---
 
@@ -104,7 +104,7 @@ JAVA_OPTS="-Xms2560m -Xmx2560m \
 
 #### 2.4.2 Spring Boot 내장 Tomcat
 
-**`application.yml` (Spring Boot 3.x)**
+**`application.yml` (Spring Boot 3.x / 4.x)**
 
 ```yaml
 server:
@@ -119,6 +119,8 @@ server:
     max-keep-alive-requests: 100
 ```
 
+> **Spring Boot 4.x 호환성**: 본 설정값을 그대로 적용. Boot 4.0(2025-11-20 GA)은 내장 Tomcat 10.1 -> 11.0(Servlet 6.1), HikariCP -> 7.0, Java 17+ baseline로 번들 버전이 상승했으나, 위 모든 튜닝 프로퍼티 키와 HikariCP 설정은 3.x와 동일.
+
 **JVM 옵션 (8 GB 호스트 / 인스턴스당 Heap 2.5 GB 기준)**
 
 ```bash
@@ -131,22 +133,23 @@ JAVA_OPTS="-Xms2560m -Xmx2560m \
 
 **하위 호환성 매핑**
 
-본 절의 프로퍼티는 **Spring Boot 3.x 전용 규격**으로 작성되었음. 각 팀의 프레임워크 환경에 따라 아래 기준에 맞게 적용해야 함.
+본 절의 프로퍼티는 **Spring Boot 3.x / 4.x 공통 규격**으로 작성되었음. 각 팀의 프레임워크 환경에 따라 아래 기준에 맞게 적용해야 함.
 
 > **프레임워크별 적용 경로**:
+> - **Spring Boot 4.x**: 본 규정의 `application.yml` 값을 그대로 적용. 내장 Tomcat 11.0 / HikariCP 7.0 번들 상승만 있고 튜닝 프로퍼티 키는 3.x와 동일
 > - **Spring Boot 3.x**: 본 규정의 `application.yml` 값을 그대로 적용
 > - **Spring Boot 2.x**: 아래 매핑표에 따라 프로퍼티 키 및 값을 변환하여 적용
 > - **Spring (Non-Boot) / 전자정부프레임워크**: `application.yml` 프로퍼티가 아닌 `server.xml` 또는 `TomcatServletWebServerFactory` Bean 설정으로 직접 제어해야 함. 2.4.1절(Apache Tomcat 9.x 독립형)의 `server.xml` Connector 설정을 참조할 것
 
 > **Spring Boot 3.0에서 구 프로퍼티 키(`server.tomcat.max-threads` 등)가 제거되고 `threads.*` 네임스페이스로 단일화되는 파괴적 변경(Breaking Change)이 있었음.** 단, `threads.max`/`threads.min-spare`는 **Boot 2.0부터 이미 사용 가능**했으며, Boot 2.x에서는 구 키와 신 키가 deprecated 병존 상태였음. Boot 2.x 환경에서는 운영 중인 세부 버전을 확인할 것. (2026-07-02 정정 — 기존 "2.4 기점" 표기는 사실 오류)
 
-| Boot 3.x (본 규정) | Boot 2.x (2.0~2.7) | Boot 1.x | 비고 |
+| Boot 3.x / 4.x (본 규정) | Boot 2.x (2.0~2.7) | Boot 1.x | 비고 |
 |:---|:---|:---|:---|
-| `server.tomcat.threads.max` | `server.tomcat.threads.max` | `server.tomcat.max-threads` | `threads.*` 네임스페이스는 Boot 2.0 도입. 구 키는 Boot 3.0에서 제거 |
+| `server.tomcat.threads.max` | `server.tomcat.threads.max` | `server.tomcat.max-threads` | `threads.*` 네임스페이스는 Boot 2.0 도입. 구 키는 Boot 3.0에서 제거. Boot 4.x는 3.x와 동일 |
 | `server.tomcat.threads.min-spare` | `server.tomcat.threads.min-spare` | `server.tomcat.min-spare-threads` | 동일 |
-| `server.tomcat.connection-timeout: 20s` | `20000` (ms 정수) | `20000` (ms 정수) | Boot 3.x는 Duration, Boot 2.x는 밀리초 정수 |
-| `server.tomcat.keep-alive-timeout: 15s` | `15000` (ms 정수, **2.5.0+**) | Bean 오버라이드 필요 | 프로퍼티 지원은 **Boot 2.5.0**부터 (기존 "2.3.0" 정정) |
-| `server.tomcat.max-keep-alive-requests: 100` | `100` (**2.4.0+**) | Bean 오버라이드 필요 | 프로퍼티 지원은 Boot 2.4.0부터 |
+| `server.tomcat.connection-timeout: 20s` | `20000` (ms 정수) | `20000` (ms 정수) | Boot 3.x/4.x는 Duration, Boot 2.x는 밀리초 정수 |
+| `server.tomcat.keep-alive-timeout: 15s` | `15000` (ms 정수, **2.5.0+**) | Bean 오버라이드 필요 | 프로퍼티 지원은 **Boot 2.5.0**부터 (기존 "2.3.0" 정정). Boot 4.x는 3.x와 동일 |
+| `server.tomcat.max-keep-alive-requests: 100` | `100` (**2.4.0+**) | Bean 오버라이드 필요 | 프로퍼티 지원은 Boot 2.4.0부터. Boot 4.x는 3.x와 동일 |
 
 #### 2.4.3 IBM WebSphere Liberty 23.x
 
