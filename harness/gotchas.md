@@ -15,6 +15,7 @@
 | 7 | `autovacuum = off` (PostgreSQL) | 비활성화 절대 금지 |
 | 8 | WAS `maxThreads = -1`(무제한) 설정 | 반드시 0 초과 명시값 |
 | 9 | Metaspace `Max < Min` (역전) | 역전 현상 절대 금지 |
+| 10 | 산출물에 **일반 블로그/커뮤니티 글** 출처 인용 | 공식 문서·벤더 소스 코드·JIRA·release notes·context7 MCP만 허용. 블로그(Medium, 개인 블로그 등)는 초기 힌트 only, 최종 인용은 일차 출처로 교차 검증 필수. `verify-standards` SKILL §2 신뢰 계층 준수 |
 
 ## 도메인 공통 불변량 (한 도메인 변경 시 전체 재검증)
 

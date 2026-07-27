@@ -828,12 +828,14 @@ systemctl restart mongod
 
 ### 2.3 RAM별 파라미터 매트릭스 (노드당)
 
-| DB 서버 RAM | cacheSizeGB | maxIncomingConnections | internalQueryExecMaxBlockingSortBytes | 비고 |
-|:---:|:---:|:---:|:---:|:---|
-| 8 GB | 3.5 GB | 1,000 | 32 MB | PSS 3노드 각각 동일 적용 |
-| 16 GB | 7.5 GB | 2,000 | 64 MB | 표준 프로덕션 |
-| 32 GB | 12.0 GB | 5,000 | 128 MB | 고성능. cacheSizeGB 하향 (OS page cache 마진) |
-| 64 GB | 24.0 GB | 10,000 | 256 MB | 대규모. cacheSizeGB 하향 (대량 커넥션 + page cache 마진) |
+| DB 서버 RAM | cacheSizeGB | maxIncomingConnections | 비고 |
+|:---:|:---:|:---:|:---|
+| 8 GB | 3.5 GB | 1,000 | PSS 3노드 각각 동일 적용 |
+| 16 GB | 7.5 GB | 2,000 | 표준 프로덕션 |
+| 32 GB | 12.0 GB | 5,000 | 고성능. cacheSizeGB 하향 (OS page cache 마진) |
+| 64 GB | 24.0 GB | 10,000 | 대규모. cacheSizeGB 하향 (대량 커넥션 + page cache 마진) |
+
+> **`internalQueryMaxBlockingSortMemoryUsageBytes`**: MongoDB 8.0 기본값 **100MB** 적용(본 규정). 비인덱스 정렬(blocking sort) 시 세션당 메모리 상한. **MongoDB 6.0+부터 이 한계 초과 시 `allowDiskUse` 기본값 true에 의해 자동 disk spill** → 쿼리 실패가 아닌 disk I/O로 전환. 구이름 `internalQueryExecMaxBlockingSortBytes`는 [SERVER-44053](https://jira.mongodb.org/browse/SERVER-44053)으로 rename/deprecated.
 
 ### 2.4 mongod.conf 전문 (프로덕션, 8GB 기준)
 
@@ -847,10 +849,12 @@ storage:
       cacheSizeGB: 3.5            # 0.5 * (8 - 1) = 3.5GB
 
 # -------------------------------------------------------
-# Query Settings
+# Query Settings (MongoDB 8.0 기본값 적용)
 # -------------------------------------------------------
-setParameter:
-  internalQueryExecMaxBlockingSortBytes: 33554432  # 32MB (8GB RAM 기준)
+# internalQueryMaxBlockingSortMemoryUsageBytes: 8.0 기본값 100MB(104857600).
+# setParameter로 명시하지 않으면 자동 적용. 조정 필요 시 아래 주석 해제:
+# setParameter:
+#   internalQueryMaxBlockingSortMemoryUsageBytes: 104857600  # 100MB (8.0 기본값)
 
 # -------------------------------------------------------
 # Replica Set
@@ -889,7 +893,7 @@ systemLog:
   logAppend: true
 ```
 
-> 각 RAM 스펙별로 cacheSizeGB, maxIncomingConnections, internalQueryExecMaxBlockingSortBytes 값을 2.3절 매트릭스에 맞게 변경. 나머지 설정은 모든 RAM 공통.
+> 각 RAM 스펙별로 cacheSizeGB, maxIncomingConnections 값을 2.3절 매트릭스에 맞게 변경. 나머지 설정은 모든 RAM 공통. `internalQueryMaxBlockingSortMemoryUsageBytes`는 MongoDB 8.0 기본값(100MB) 적용으로 본 매트릭스에서 제외.
 > defaultMaxTimeMS는 mongod.conf 항목이 아님(cluster parameter). 2.1절 적용 예시 참조.
 
 ### 2.5 Replica Set 초기화 (mongosh)
@@ -921,12 +925,12 @@ db.adminCommand({ setClusterParameter: { defaultMaxTimeMS: { readOperations: 600
 
 #### RAM별 파라미터 매트릭스 (Standalone)
 
-| DB 서버 RAM | cacheSizeGB | maxIncomingConnections | internalQueryExecMaxBlockingSortBytes | 비고 |
-|:---:|:---:|:---:|:---:|:---|
-| 8 GB | 3.5 GB | 1,000 | 32 MB | 개발/테스트 |
-| 16 GB | 7.5 GB | 2,000 | 64 MB | 개발/테스트 |
-| 32 GB | 12.0 GB | 5,000 | 128 MB | 프로토타입 (RS 전환 계획 필수) |
-| 64 GB | 24.0 GB | 10,000 | 256 MB | 프로토타입 (RS 전환 계획 필수) |
+| DB 서버 RAM | cacheSizeGB | maxIncomingConnections | 비고 |
+|:---:|:---:|:---:|:---|
+| 8 GB | 3.5 GB | 1,000 | 개발/테스트 |
+| 16 GB | 7.5 GB | 2,000 | 개발/테스트 |
+| 32 GB | 12.0 GB | 5,000 | 프로토타입 (RS 전환 계획 필수) |
+| 64 GB | 24.0 GB | 10,000 | 프로토타입 (RS 전환 계획 필수) |
 
 #### mongod.conf (개발/테스트용, 8GB 기준)
 
@@ -936,8 +940,9 @@ storage:
     engineConfig:
       cacheSizeGB: 3.5            # 0.5 * (8 - 1)
 
-setParameter:
-  internalQueryExecMaxBlockingSortBytes: 33554432  # 32MB (8GB RAM 기준)
+# internalQueryMaxBlockingSortMemoryUsageBytes: 8.0 기본값 100MB 적용. setParameter 생략 시 자동 적용.
+# setParameter:
+#   internalQueryMaxBlockingSortMemoryUsageBytes: 104857600  # 100MB
 
 net:
   port: 27017

@@ -157,7 +157,7 @@ sequenceDiagram
 | Profiling Level | 1 (slowms: 100) | 슬로우 쿼리·COLLSCAN 감지 |
 | `defaultMaxTimeMS` | 60,000 (권장) | 8.0 신규. 개별 읽기 기본 시간 제한 |
 | `maxIncomingConnections` | RAM별 1,000~10,000 | 최대 동시 연결. 커넥션당 1MB 스택. 기본 65,536은 소형 서버 OOM 위험 |
-| `internalQueryExecMaxBlockingSortBytes` | RAM별 32~256 MB | 인덱스 없는 정렬 시 세션당 메모리 상한 |
+| `internalQueryMaxBlockingSortMemoryUsageBytes` | **100MB (8.0 기본값)** | 인덱스 없는 정렬 시 세션당 메모리 상한. 6.0+ allowDiskUse 기본 true → 초과 시 자동 disk spill. 구이름 `internalQueryExecMaxBlockingSortBytes`는 [SERVER-44053](https://jira.mongodb.org/browse/SERVER-44053) rename/deprecated |
 
 ### 3.2 Write Concern / Read Preference 의사결정
 

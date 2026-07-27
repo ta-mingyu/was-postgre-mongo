@@ -670,7 +670,7 @@ graph LR
 | **electionTimeoutMillis** | `10000` (10s, 기본값) | Secondary 노드가 Primary로부터 하트비트 신호를 받지 못했을 때, Primary 장애로 판단하고 새 Primary 선거(Election)를 시작하기까지 대기하는 시간. 너무 짧으면 네트워크 일시 지연에도 불필요한 페일오버가 발생하고, 너무 길면 실제 장애 시 복구가 지연됨 |
 | **defaultMaxTimeMS** | 권장: `60000` | **MongoDB 8.0 신규** 파라미터. 개별 읽기 연산의 기본 시간 제한(ms). 장기 실행 쿼리가 무한정 실행되어 서버 자원을 독점하는 것을 방지함 |
 | **maxIncomingConnections** | RAM별 차등 (1,000~10,000) | MongoDB가 수용할 최대 동시 클라이언트 연결 수. MongoDB는 커넥션당 1개 스레드를 할당하며, Linux 스레드 스택은 기본 1MB이므로 커넥션 수에 비례하여 메모리 소모 (예: 5,000커넥션 ≈ 5GB). 기본값(65536)은 소형 서버에서 OOM 유발 위험이 있으므로 RAM 용량에 따라 명시적 상한 설정이 필수임. WAS 30대 × 100풀 = 3,000이므로, 상용 환경에서는 최소 5,000 이상 권장 |
-| **internalQueryExecMaxBlockingSortBytes** | RAM별 차등 (32~256 MB) | 인덱스가 없는 필드에 대한 블로킹 정렬(Blocking Sort, 인메모리 정렬) 시 세션당 허용하는 최대 메모리 바이트 상한선. PostgreSQL의 `work_mem`과 유사한 개념. 악성 쿼리 1개가 시스템 전체 메모리를 고갈시키지 않도록 격리하되, 대규모 상용 척력(32G~64G)에서는 정상 대용량 쿼리가 제한에 걸려 실패하는 현상을 방지하기 위해 가용 마진 내에서 배수 상향 조정함 |
+| **internalQueryMaxBlockingSortMemoryUsageBytes** | **100MB (MongoDB 8.0 기본값)** | 인덱스가 없는 필드에 대한 블로킹 정렬(Blocking Sort) 시 세션당 허용하는 최대 메모리 바이트 상한선. PostgreSQL의 `work_mem`과 유사. 본 규정은 8.0 기본값(100MB)을 그대로 적용. MongoDB 6.0+부터 한계 초과 시 `allowDiskUse` 기본 동작으로 자동 disk spill(쿼리 실패 아님). 구이름 `internalQueryExecMaxBlockingSortBytes`는 [SERVER-44053](https://jira.mongodb.org/browse/SERVER-44053)으로 rename/deprecated |
 
 #### Write Concern / Read Preference 의사결정표
 
@@ -689,12 +689,14 @@ graph LR
 
 #### RAM별 파라미터 매트릭스 (노드당)
 
-| DB 서버 RAM | cacheSizeGB | maxIncomingConnections | internalQueryExecMaxBlockingSortBytes | 비고 |
-|:---:|:---:|:---:|:---:|:---|
-| **8 GB** | 3.5 GB | 1,000 | 32 MB | PSS 3노드 각각 동일 적용 |
-| **16 GB** | 7.5 GB | 2,000 | 64 MB | 표준 프로덕션 |
-| **32 GB** | 12.0 GB | 5,000 | 128 MB | 고성능. cacheSizeGB 하향 (OS page cache 마진 확보) |
-| **64 GB** | 24.0 GB | 10,000 | 256 MB | 대규모. cacheSizeGB 하향 (대량 커넥션 + page cache 마진) |
+| DB 서버 RAM | cacheSizeGB | maxIncomingConnections | 비고 |
+|:---:|:---:|:---:|:---|
+| **8 GB** | 3.5 GB | 1,000 | PSS 3노드 각각 동일 적용 |
+| **16 GB** | 7.5 GB | 2,000 | 표준 프로덕션 |
+| **32 GB** | 12.0 GB | 5,000 | 고성능. cacheSizeGB 하향 (OS page cache 마진 확보) |
+| **64 GB** | 24.0 GB | 10,000 | 대규모. cacheSizeGB 하향 (대량 커넥션 + page cache 마진) |
+
+> `internalQueryMaxBlockingSortMemoryUsageBytes`는 MongoDB 8.0 기본값 100MB 적용으로 본 매트릭스에서 제외.
 
 #### 실무 설정 스크립트
 
@@ -710,10 +712,11 @@ storage:
       cacheSizeGB: 3.5            # 0.5 * (8 - 1) = 3.5GB
 
 # -------------------------------------------------------
-# Query Settings
+# Query Settings (MongoDB 8.0 기본값 적용)
 # -------------------------------------------------------
-setParameter:
-  internalQueryExecMaxBlockingSortBytes: 33554432  # 32MB (8GB RAM 기준)
+# internalQueryMaxBlockingSortMemoryUsageBytes: 8.0 기본값 100MB. setParameter 생략 시 자동 적용.
+# setParameter:
+#   internalQueryMaxBlockingSortMemoryUsageBytes: 104857600  # 100MB (8.0 기본값)
 
 # -------------------------------------------------------
 # Replica Set
@@ -780,12 +783,12 @@ db.setProfilingLevel(1, { slowms: 100 })
 
 #### RAM별 파라미터 매트릭스
 
-| DB 서버 RAM | cacheSizeGB | maxIncomingConnections | internalQueryExecMaxBlockingSortBytes | 비고 |
-|:---:|:---:|:---:|:---:|:---|
-| **8 GB** | 3.5 GB | 1,000 | 32 MB | 개발/테스트 |
-| **16 GB** | 7.5 GB | 2,000 | 64 MB | 개발/테스트 |
-| **32 GB** | 12.0 GB | 5,000 | 128 MB | 프로토타입 (RS 전환 계획 필수) |
-| **64 GB** | 24.0 GB | 10,000 | 256 MB | 프로토타입 (RS 전환 계획 필수) |
+| DB 서버 RAM | cacheSizeGB | maxIncomingConnections | 비고 |
+|:---:|:---:|:---:|:---|
+| **8 GB** | 3.5 GB | 1,000 | 개발/테스트 |
+| **16 GB** | 7.5 GB | 2,000 | 개발/테스트 |
+| **32 GB** | 12.0 GB | 5,000 | 프로토타입 (RS 전환 계획 필수) |
+| **64 GB** | 24.0 GB | 10,000 | 프로토타입 (RS 전환 계획 필수) |
 
 #### 실무 설정 스크립트
 
@@ -797,8 +800,9 @@ storage:
     engineConfig:
       cacheSizeGB: 3.5            # 0.5 * (8 - 1)
 
-setParameter:
-  internalQueryExecMaxBlockingSortBytes: 33554432  # 32MB (8GB RAM 기준)
+# internalQueryMaxBlockingSortMemoryUsageBytes: 8.0 기본값 100MB 적용. setParameter 생략 시 자동 적용.
+# setParameter:
+#   internalQueryMaxBlockingSortMemoryUsageBytes: 104857600  # 100MB
 
 net:
   port: 27017

@@ -168,3 +168,13 @@
   - [x] §9 검증 체크리스트 (18건)
   - [x] §10 모니터링 체크리스트
 - [x] AGENTS.md "서버별 실무 배포 가이드" 섹션에 web.md 링크 추가(WAS 직전)
+
+## Phase 15: MongoDB internalQuery 파라미터 정정 + 출처 신뢰 계층 강화 [Completed]
+
+- [x] `reports/final/mongodb.md`: `internalQueryExecMaxBlockingSortBytes` -> `internalQueryMaxBlockingSortMemoryUsageBytes` (신이름, [SERVER-44053](https://jira.mongodb.org/browse/SERVER-44053)) + RAM별 차등 32/64/128/256MB -> 8.0 기본값 100MB 고정 + allowDiskUse(6.0+) 자동 disk spill note (9곳 정정)
+- [x] `reports/final-standard-guide.md` 동일 정정 동기화 (파라미터 설명/PSS 매트릭스/mongod.conf/Standalone 매트릭스/Standalone mongod.conf 5곳)
+- [x] `reports/db-standard-guide-v4.md` 동일 정정 동기화 (5곳)
+- [x] `study/05-mongodb-wiredtiger.md` 라인 160 정정
+- [x] `harness/vendor-research.md` §4.5 변경 이력 추가 (SERVER-44053 + query_knobs.idl + cursor.allowDiskUse 공식 문서 출처)
+- [x] `harness/gotchas.md` 절대 금지 #10 추가: 일반 블로그/커뮤니티 글 출처 인용 금지 (공식 문서/소스/JIRA/release notes/context7만 허용)
+- [x] `.opencode/skills/verify-standards/SKILL.md`: 신뢰 계층 3->4단계 확장(벤더 소스 코드 계층 2 신설) + 블로그 금지 명문화 + 산출 규칙·완료 조건 강화

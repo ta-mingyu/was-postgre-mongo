@@ -52,9 +52,12 @@ description: reports/ 산출물(표준 설정 가이드라인)이 갱신될 때,
 
 | 계층 | 소스 | 용도 |
 | :---: | :--- | :--- |
-| 1 | 벤더 **공식 문서 + release notes** | 권위적 기준값, 버전별 변경/Deprecated |
-| 2 | **context7 MCP** (`/context7` 스킬) | 현재 버전 문서 프로그래매틱 조회 |
-| 3 | `harness/vendor-research.md` 기존 출처(IBM Performance Cookbook 등) | 보조 참조 |
+| 1 | 벤더 **공식 문서 + release notes + 공식 JIRA 티켓** | 권위적 기준값, 버전별 변경/Deprecated |
+| 2 | **벤더 소스 코드**(공식 GitHub repo, `.idl`/`.h`/`.yaml` 파라미터 정의) | 공식 문서에 누락된 internal/undocumented 파라미터·기본값 회수 (예: MongoDB `internalQuery*` 파라미터) |
+| 3 | **context7 MCP** (`/context7` 스킬) | 현재 버전 문서 프로그래매틱 조회 |
+| 4 | `harness/vendor-research.md` 기존 출처 | 보조 참조 |
+
+> **금지 소스(인용 불가)**: 일반 블로그(Medium, Dev.to, 개인 블로그), Q&A 커뮤니티 답변 본문(StackOverflow 본문), 비공식 요약 사이트. 이들은 초기 탐색 힌트로만 활용하고, **최종 인용은 반드시 계층 1~3의 일차 출처로 교차 검증 후 표기**. (근거: 2026-07-27 MongoDB `internalQueryExecMaxBlockingSortBytes` 오기 사건 — 블로그 출처로 32MB가 전파되었으나 8.0 기본값은 100MB이고 파라미터명도 rename됨. 공식 JIRA + 소스 코드로 정정)
 
 리서칭 시 반드시 확인:
 - 현재 프로젝트 기준 버전(PostgreSQL, MongoDB 8.0/8.3, Spring Boot 3.5/4.0, Tomcat 9/10, Liberty 23.x)
@@ -88,12 +91,13 @@ description: reports/ 산출물(표준 설정 가이드라인)이 갱신될 때,
 
 ## 산출 규칙 (준수)
 - 한국어, 이모지 금지. 상세는 `harness/conventions.md`.
-- 모든 수치에 출처 명시(리서치 의무). 미확인 값은 "미확인" 표기, 추측 금지.
+- 모든 수치에 출처 명시(리서치 의무). **출처는 계층 1~3(공식 문서/소스/JIRA/context7)만 허용**. 블로그/커뮤니티 글은 초기 힌트로만 활용, 인용 금지. 미확인 값은 "미확인" 표기, 추측 금지.
 - `harness/` 에 Report 본문 작성 금지. 리서치 결과는 `vendor-research.md`에.
 
 ## 완료 조건
 - [ ] 검증 대상(벤더 권장값)과 제외(환경 불변량) 분류 완료
-- [ ] 각 권장값 최신 자료(context7 + 공식 문서 + release notes) 조사
+- [ ] 각 권장값 최신 자료(context7 + 공식 문서 + release notes + 벤더 소스/JIRA) 조사
 - [ ] 기존 vs 최신 비교 테이블 작성
 - [ ] 불일치값 발견 시 vendor-research.md 갱신 + rules 수정 제안
 - [ ] 표준값 변경 사항은 HITL 분류(TA 승인 전 확정 금지)
+- [ ] 모든 인용 출처가 계층 1~3(공식 문서/소스/JIRA/context7)인지 확인 — 블로그/커뮤니티 글 인용 금지

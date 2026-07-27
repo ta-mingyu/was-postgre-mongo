@@ -172,3 +172,13 @@
 | 공식 vs 매트릭스 관계 | — | 공식은 "이론 상한 참고치", 매트릭스는 "운영 적용 표준값"으로 명시 | PostgreSQL 공식 문서가 work_mem에 명시 산정 공식을 제공하지 않으므로, 워크로드 의존적 매트릭스 운영값이 우선. 둘이 달라도 정합성 위반 아님 |
 
 > 출처: [PostgreSQL 17 Runtime Config — work_mem](https://www.postgresql.org/docs/17/runtime-config-resource.html#GUC-WORK-MEM) (명시 공식 없음, "concurrent operations" 경고만), [kofemann/pgtune](https://github.com/kofemann/pgtune)
+
+### 4.5 [2026-07-27] MongoDB 8.0 internalQueryExecMaxBlockingSortBytes rename + 기본값 상향
+
+| 항목 | 기존 | 변경 | 근거 |
+| :--- | :--- | :--- | :--- |
+| 파라미터명 | `internalQueryExecMaxBlockingSortBytes` | **`internalQueryMaxBlockingSortMemoryUsageBytes`** | [SERVER-44053](https://jira.mongodb.org/browse/SERVER-44053) rename. 구이름은 deprecated alias |
+| 기본값 | 32MB (5.x 이하 기본) | **100MB** (6.0+ 기본, 8.0 동일) | [query_knobs.idl](https://github.com/mongodb/mongo/blob/master/src/mongo/db/query/query_knobs.idl) `default: 100 * 1024 * 1024` |
+| 본 규정 권장값 | RAM별 차등 32/64/128/256MB | **8.0 기본값 100MB 고정** | MongoDB 6.0+ `allowDiskUse` 기본 true → 한계 초과 시 자동 disk spill(쿼리 실패 아님). RAM별 상향은 실효성 미미 |
+
+> 출처: [MongoDB JIRA SERVER-44053](https://jira.mongodb.org/browse/SERVER-44053), [MongoDB 소스 query_knobs.idl (master)](https://github.com/mongodb/mongo/blob/master/src/mongo/db/query/query_knobs.idl), [cursor.allowDiskUse() 공식 문서](https://www.mongodb.com/docs/manual/reference/method/cursor.allowDiskUse/) (6.0+ 기본 100MB + 자동 disk spill). 본 정정은 공식 reference/parameters 문서에 누락된 internal 파라미터를 소스 코드와 JIRA로 회수한 사례 — verify-standards 신뢰 계층 1~2(공식 JIRA + 소스) 준수.
