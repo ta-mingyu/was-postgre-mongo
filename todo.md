@@ -178,3 +178,13 @@
 - [x] `harness/vendor-research.md` §4.5 변경 이력 추가 (SERVER-44053 + query_knobs.idl + cursor.allowDiskUse 공식 문서 출처)
 - [x] `harness/gotchas.md` 절대 금지 #10 추가: 일반 블로그/커뮤니티 글 출처 인용 금지 (공식 문서/소스/JIRA/release notes/context7만 허용)
 - [x] `.opencode/skills/verify-standards/SKILL.md`: 신뢰 계층 3->4단계 확장(벤더 소스 코드 계층 2 신설) + 블로그 금지 명문화 + 산출 규칙·완료 조건 강화
+
+## Phase 16: PgPool-II Watchdog VIP/trusted_servers 가이드 추가 [Completed]
+
+- [x] `reports/final/pgpool-ii.md` §0: VIP(Floating IP) 구조 및 WAS 연결 방식 명확화
+- [x] `reports/final/pgpool-ii.md` §2.1: delegate_ip, trusted_servers, trusted_server_command 파라미터 행 추가
+- [x] `reports/final/pgpool-ii.md` §2.2: pgpool.conf 전문 Watchdog 섹션 갱신 (v4.2+ hostname0/1, delegate_ip, trusted_servers 블록)
+- [x] `reports/final/pgpool-ii.md` §2.3 신규: Watchdog VIP 페일오버 메커니즘 + trusted_servers 상세 가이드 (K8s/베어메탈 환경, Split-Brain 방지, PostgreSQL IP 지정 금지)
+- [x] `reports/final/pgpool-ii.md` §4: 검증 체크리스트 2건 추가 (delegate_ip 설정, trusted_servers 2개 이상)
+- [x] `harness/postgresql-rules.md` §3.3: delegate_ip, trusted_servers 참조 추가
+- [x] `harness/postgresql-rules.md` §7: 검증 체크리스트 항목 15/16 추가

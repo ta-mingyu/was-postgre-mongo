@@ -38,6 +38,7 @@ graph LR
     PG_M -->|WAL Streaming| PG_R
 ```
 
+- **VIP(Floating IP) 구조**: VIP는 특정 서버에 고정 바인딩되지 않는다. Watchdog이 Active PgPool에 VIP를 부여하고, Active 장애 시 Standby가 Gratuitous ARP로 VIP를 인계한다. **WAS는 개별 PgPool 서버 IP가 아닌 VIP 하나만 바라본다** -- Active/Standby 전환 시 WAS 커넥션 풀 URL 변경 불필요
 - **커넥션 풀링으로 70% Ceiling 대체**: PgPool 환경에서는 직접 연결의 70% Ceiling Rule이 PgPool-II의 연결 풀링으로 대체됨. WAS 풀 합산이 num_init_children을 초과해도 PgPool Listen Queue가 초과분을 안전하게 흡수
 - **타임아웃 캐스케이드**: `WAS maxLifetime(27min) < PgPool child_life_time(28min) < PG idle_session_timeout(30min) <= 방화벽 최단(30min)` (방화벽은 30~60min 범위, 최단 30min 기준 설계. keepalive 60s로 잔여 레이스 방어)
 - **kernel.sem 선행 필수**: `num_init_children=120` 구동 시 세마포어 상한 필수. 미설정 시 구동 실패
@@ -143,6 +144,9 @@ systemctl restart pgpool
 | load_balance_mode | on | 읽기 쿼리(SELECT)를 Replica로 자동 분산. INSERT/UPDATE/DELETE는 항상 Primary |
 | backend_clustering_mode | 'streaming_replication' | v4.x+ 스트리밍 복제 모드. 기존 master_slave_mode는 폐지 |
 | backend_weight0 / weight1 | Primary 1 / Replica 3 | 읽기 쿼리 분산 비율. Primary는 쓰기 전담 + 최소 읽기, Replica에 읽기 부하 집중 (1:3 = 25%:75%) |
+| delegate_ip | 환경에 맞는 VIP | Watchdog이 관리하는 VIP(Floating IP). WAS가 접속하는 IP. Active 장애 시 Standby가 인계 (v4.2+ 파라미터명, 기존 `wd_vip`는 폐지) |
+| trusted_servers | K8s 노드 물리 IP 2개 이상 (환경별 상이) | upstream(WAS) 방향 네트워크 생존 확인. 전부 응답하지 않으면 VIP 반납. Split-Brain 방지 (상세: §2.3) |
+| trusted_server_command | `ping -q -c3 %h` (기본값) | trusted_servers에 대한 ping 명령. `%h`는 각 호스트명으로 치환되어 실행 |
 
 > num_init_children=120은 PgPool 공식 권고 공식(max_pool x num_init_children <= max_connections - superuser_reserved)을 초과(1x120 > 97). 단, 연결 풀링으로 실제 동시 백엔드 연결은 100 이하 유지됨.
 >
@@ -182,14 +186,111 @@ health_check_max_retries = 3
 # Watchdog (SPOF 방지)
 # -------------------------------------------------------
 use_watchdog = on
-wd_hostname = 'pgpool-node1'
-wd_vip = '10.0.0.100'
+hostname0 = 'pgpool-node1'        # v4.2+ 통합 설정 방식 (양쪽 노드 모두 동일하게 작성)
+hostname1 = 'pgpool-node2'
+wd_port = 9000
+delegate_ip = '10.0.0.100'        # v4.2+ (기존 wd_vip 폐지). Watchdog이 관리할 VIP
+
+# -------------------------------------------------------
+# Upstream Server Monitoring (Split-Brain 방지)
+# -------------------------------------------------------
+trusted_servers = '10.0.1.10,10.0.1.11'     # K8s 워커 노드 물리 IP 2대 (상세: §2.3)
+trusted_server_command = 'ping -q -c3 %h'  # 기본값. %h는 trusted_servers 각 호스트로 치환
 
 # -------------------------------------------------------
 # Auto Failover
 # -------------------------------------------------------
 failover_command = '/etc/pgpool-II/failover.sh'
 ```
+
+### 2.3 Watchdog VIP 및 trusted_servers 상세 가이드
+
+> **기준 문서**: PgPool-II 4.7.2 공식 문서 (runtime-watchdog-config.html §5.15.3, §5.15.4)
+
+#### VIP 페일오버 메커니즘
+
+Watchdog은 Active PgPool이 장애 시 자동으로 VIP를 Standby로 인계한다. VIP는 특정 서버에 고정 바인딩되지 않으며, Active 역할을 수행하는 서버가 일시적으로 보유하는 Floating IP다.
+
+```mermaid
+sequenceDiagram
+    participant WAS as WAS (HikariCP)
+    participant VIP as VIP (delegate_ip)
+    participant PP_A as PgPool Active
+    participant PP_B as PgPool Standby
+    participant WD as Watchdog
+
+    Note over WAS,VIP: 정상 상태: WAS는 VIP로 접속
+    WAS->>VIP: jdbc:postgresql://10.0.0.100:9999/db
+    VIP->>PP_A: Active가 VIP 보유
+
+    Note over PP_A,WD: Active 장애 발생
+    PP_A--xWD: health check 응답 없음 (3회 실패)
+    WD->>PP_B: Standby에게 리더 권한 위임
+    PP_B->>VIP: Gratuitous ARP 송출 (VIP 인계)
+    Note over VIP: ARP 테이블 갱신<br/>이후 트래픽이 PP_B로 전달
+    WAS->>VIP: 동일한 VIP로 재접속
+    VIP->>PP_B: 새 Active가 서빙
+```
+
+- **Gratuitous ARP**: Standby가 네트워크에 브로드캐스트하여 "VIP의 MAC 주소가 내 것으로 변경되었다"를 알린다. L2 스위치/라우터가 ARP 테이블을 갱신하여 이후 트래픽이 새 Active로 전달된다
+- **페일오버 소요 시간**: health_check_period(30s) x retries(3) + ARP 갱신 = 최대 약 90~120초. 서비스 요구 RTO(10s)를 충족하려면 health_check 주기 튜닝 필요
+- **WAS 영향**: 기존 커넥션은 RST, 신규 연결은 VIP 인계 완료 후 정상 수용. HikariCP connectionTimeout 내 재연결
+
+#### trusted_servers 역할
+
+`trusted_servers`는 **upstream(WAS) 방향 네트워크 단절을 감지**하여 Split-Brain을 방지하는 안전장치다.
+
+> PgPool-II 자체가 살아있고 PostgreSQL과도 연결되어 있더라도, upstream 링크가 끊겨 있으면 서비스를 제공할 수 없다. 따라서 Watchdog은 upstream 연결도 함께 감시한다.
+> -- PgPool-II 공식 문서 §5.15.3
+
+```mermaid
+graph LR
+    subgraph upstream [upstream / WAS 방향]
+        WAS[WAS Pod]
+        NODE1[K8s Node 1<br/>물리 IP: 10.0.1.10]
+        NODE2[K8s Node 2<br/>물리 IP: 10.0.1.11]
+    end
+
+    subgraph pgpool_layer [PgPool Layer]
+        PP[PgPool-II<br/>trusted_servers ping 수행]
+    end
+
+    PP -.->|ping| NODE1
+    PP -.->|ping| NODE2
+
+    WAS -->|jdbc:postgresql://VIP:9999| PP
+```
+
+- **동작**: Watchdog이 `trusted_servers`에 지정된 서버들에 ping(ICMP)을 전송한다. **하나라도 응답하면 정상**, **전부 응답하지 않으면 VIP를 반납**한다
+- **목적**: PgPool 서버 2대 간 네트워크가 단절되었을 때, 양쪽 모두가 "상대가 죽었다"고 판단하고 VIP를 중복 보유하는 Split-Brain을 방지
+- **ping은 포트를 사용하지 않음**: ICMP(L3) 프로토콜이므로 포트 개념이 없다. IP 주소만으로 동작한다
+
+#### trusted_servers 설정 가이드
+
+**K8s 환경 권장값** (외부 L4 VIP 불필요):
+
+| 설정값 | 정체 | 선정 근거 |
+|:---|:---|:---|
+| K8s 워커 노드 물리 IP (예: `10.0.1.10`) | K8s Node의 NIC에 바인딩된 실제 IP | ICMP ping에 확실하게 응답. 노드가 살아있는 한 안 바뀜. 2대 지정 시 둘 다 죽으면 K8s 노드 자체가 끊긴 것이므로 VIP 반납이 맞음 |
+
+> **K8s Service ClusterIP를 trusted_servers에 넣으면 안 되는 이유**: kube-proxy가 iptables 모드(대부분의 클러스터 기본값)인 경우, Service ClusterIP는 실제 네트워크 인터페이스에 바인딩되지 않고 iptables 규칙으로 DNAT 처리된다. 이 경우 TCP/UDP 트래픽만 처리되고 **ICMP ping은 응답하지 않는다**. IPVS 모드인 경우에도 IPVS 설정에 따라 ICMP 응답이 불확실하다. `trusted_servers`는 ping 응답이 필수이므로, 반드시 물리 NIC에 바인딩된 노드 IP를 사용해야 한다.
+
+```bash
+# K8s 워커 노드 물리 IP 확인 명령
+kubectl get nodes -o wide
+# NAME           STATUS   INTERNAL-IP
+# worker-node1   Ready    10.0.1.10
+# worker-node2   Ready    10.0.1.11
+```
+
+**비-K8s(베어메탈/VM) 환경 권장값**:
+
+| 설정값 | 선정 근거 |
+|:---|:---|
+| WAS 서브넷 게이트웨이 또는 코어 스위치 IP | WAS-PgPool 간 경로상 네트워크 장비 |
+| WAS 서버 IP (대표 1~2대) | upstream 도달성 직접 확인 |
+
+> **절대 금지 (공식 문서 경고)**: PostgreSQL 서버 IP를 `trusted_servers`에 지정하지 않는다. `trusted_servers`는 upstream(WAS 방향) 네트워크 상태 확인이 목적이며, PostgreSQL 감시는 `health_check_period` 등 별도 파라미터가 담당한다.
 
 ---
 
@@ -245,6 +346,8 @@ WAS -> PgPool 계층:
 - [ ] failover_command 지정 -- 자동 페일오버 스크립트 (위반 시: Primary 다운 시 수동 개입 필요)
 - [ ] child_life_time < DB idle_session_timeout -- 타임아웃 캐스케이드 준수 (위반 시: DB 강제 차단 전 PgPool이 먼저 회수 불가)
 - [ ] systemd 서비스 LimitNOFILE/LimitNPROC override 설정 -- 서비스 데몬 ulimit 적용 (미적용 시: limits.conf 무시되어 기본값 1024로 동작)
+- [ ] delegate_ip 설정 (빈 값 불가) -- VIP 미설정 시 Watchdog 페일오버가 무효화됨 (위반 시: Active 장애 시 Standby가 VIP를 인계하지 못해 서비스 중단)
+- [ ] trusted_servers 2개 이상 지정 -- Split-Brain 방지 (위반 시: 단일 서버 장애로 VIP가 잘못된 노드에 중복 할당. PostgreSQL 서버 IP 지정 절대 금지)
 
 ---
 

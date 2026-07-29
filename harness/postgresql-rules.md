@@ -132,6 +132,8 @@ backend_weight1 = 3  # Replica (Primary 1 : Replica 3 = 25%:75%, 읽기 부하 R
 
 - `use_watchdog = on` -- SPOF 방지 (VIP 기반)
 - `failover_command` 지정 -- Primary 다운 시 Replica 승격 스크립트
+- `delegate_ip` 설정 -- Watchdog이 관리할 VIP (v4.2+ 파라미터명, 기존 `wd_vip` 폐지)
+- `trusted_servers` 2개 이상 -- upstream(WAS) 방향 네트워크 생존 확인, Split-Brain 방지. K8s 환경: 워커 노드 물리 IP 사용 (Service ClusterIP는 ping 미응답). PostgreSQL 서버 IP 지정 금지 (공식 문서 경고). 상세 가이드: `reports/final/pgpool-ii.md` §2.3
 
 > **이중화 의무 (표준 2대)**: PgPool-II 단일 구성은 SPOF. 표준은 Active+Standby 2대(Watchdog VIP 이중화). **1대 운영 중인 곳은 2대로 증설 필수**. 서비스 규모가 작아 오버엔지니어링 우려 시 **IT기획실 문의** (예외 승인 후 단일 유지 가능). 상세 절차는 `reports/final/pgpool-ii.md` §6.7.
 
@@ -246,6 +248,8 @@ DB max_connections = X
 | 12 | Primary 노드 restart 전 `pcp_promote_node -s` switchover 또는 `backend_flag{N} = DISALLOW_TO_FAILOVER` 설정 | 의도치 않은 자동 failover 방지 (미준수 시: Replica 승격, 복제 토폴로지 역전) |
 | 13 | reload 가능 파라미터(sighup/user context) 변경 시 `systemctl reload postgresql` 우선, `pending_restart` 조회로 restart 필요성 사전 확인 | 불필요한 서비스 중단 회피 |
 | 14 | PgPool-II 2대(Active+Standby) 이중화 구성 (단일 구성 시 2대 증설 또는 IT기획실 예외 승인) | SPOF 제거, 무중단 유지보수 가능 (`reports/final/pgpool-ii.md` §6.7) |
+| 15 | `delegate_ip` 설정 (빈 값 불가) | VIP 미설정 시 Watchdog 페일오버 무효 (`reports/final/pgpool-ii.md` §2.3) |
+| 16 | `trusted_servers` 2개 이상 지정 (PostgreSQL IP 제외) | Split-Brain 방지. upstream 네트워크 단절 감지 (`reports/final/pgpool-ii.md` §2.3) |
 
 ---
 
