@@ -19,6 +19,21 @@
 | DB - MongoDB | Replica Set(Master 1/Slave 2), R:W=6:4, COLLSCAN 모니터링 미수행 | 해당없음 |
 | 특이사항 | 파티셔닝 미적용, Slow Query 없음 | Java 버전 혼합 운영 |
 
+### 이력: 마이크로서비스 구조 표준 편차 (2026-08-21, 특수 케이스로 종결)
+
+| 항목 | 내용 |
+| :--- | :--- |
+| 구조 | WAS 14개 마이크로서비스 x 읽기/쓰기 계정 2개 = HikariCP 풀 28개 |
+| 실제 풀 설정 | max 5 / min-idle 2 / idle-timeout 30s / max-lifetime 30min / connection-timeout 30s (was.md 표준 이탈) |
+| 장비 | PgPool 4core/8GB, PostgreSQL 4core/32GB |
+| 팀 자체 변경 | max_connections 100 -> 400, max_wal_senders 5 -> 10 (사전 협의 없음, postmaster 재시작 수반) |
+| 관측(2026-08) | active 2 / idle 243 / idle-in-txn 3 / null 6. 실부하 대비 유휴 연결 과잉. 원인 추정: idle-timeout 30s 처닝 + PgPool 캐시 곱셈(계정 28개) |
+| TA 결정 | max_wal_senders 10 유지 허용. max_connections는 100이 아닌 **200** 복귀 지시 (풀 28개 x 5 = 140 > 100 x 0.7이라 100 불가) |
+| 권장 조치 순서 | 1) HikariCP fixed-size(min=max 5, idle-timeout 제거, max-lifetime 27min, keepalive 60s) 2) PgPool max_pool 1 / num_init_children 160 3) DB max_connections 200 (PgPool detach/attach 롤링). 순서 변경 시 연결 거부 장애 |
+| 미확인 사항 | PgPool num_init_children/max_pool 실제값, WAS 서비스당 레플리카 수, 에러 메시지 원문 |
+| 분류 | **특수 케이스** -- 가이드 v5 개정 없이 팀 한정 처리 (TA 결정 2026-08-21). "max_connections 100 고정" 표준 자체는 유지 |
+| 공유 문서 | `reports/platform-team-settings-guide.md` (2026-08-21 팀장 배포용 최종 설정 안내: WAS/PgPool/PG 3단계 적용 절차 포함) |
+
 ## CL플랫폼팀 (CLS Team)
 
 | 항목 | 값 |

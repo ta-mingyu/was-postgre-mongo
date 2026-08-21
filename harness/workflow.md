@@ -56,19 +56,18 @@
 - 최신 벤더 권장값/튜닝 알고리즘 리서치를 병행하며 점진적 갱신.
 - 리서치 결과는 `research/` 에 기록(출처 명시).
 
-## 루프 사용 정책 (ralph vs ulw)
+## 자율 실행/루프 사용 정책
 
-이 프로젝트는 document + Human-in-the-Loop 성격이므로 **자율 루프 사용을 지양**한다.
+이 프로젝트는 document + Human-in-the-Loop 성격이므로 **자율 반복 실행을 지양**한다.
 
-- 기본: 단일 작업 단위로 TA 확인(HITL 게이트)을 거치며 진행.
-- ralph/code-loop: 부적합. 코드가 없고 TA 승인이 빈번해 루프가 HITL에서 반복 정지.
-- ulw-research-doc-loop: **예외적 허용**. 순수 리서치 + 문서화(예: Phase 5 MongoDB 매트릭스 보완)처럼 TA 개입 없이 완결 가능한 경우만. `max-iterations` 낮게(3~5) 설정.
-- 루프 진입 전 반드시: HITL 활성 이슈가 해당 작업 범위에 없는지 확인. 있으면 루프 금지.
+- 기본: 단일 작업 단위로 TA 확인(HITL 게이트)을 거치며 진행. 진입점은 `ta-infra-orchestrator` 스킬.
+- 예외적 허용: 순수 리서치 + 문서화(예: Phase 5 MongoDB 매트릭스 보완)처럼 TA 개입 없이 완결 가능한 경우만 반복 실행 가능. 반복 횟수는 낮게(3~5회) 제한.
+- 반복 진입 전 반드시: HITL 활성 이슈가 해당 작업 범위에 없는지 확인. 있으면 금지.
 
 ## 버저닝 워크플로우
 
 가이드 갱신 시 (conventions.md 버저닝 규칙 + commands.md 순서 준수):
 1. 신규 버전 파일 생성 `reports/{name}-v{N}.md`
 2. `reports/final/` 정본 사본 동기화
-3. AGENTS.md 링크 최신화
+3. CLAUDE.md 링크 최신화
 4. todo.md 갱신

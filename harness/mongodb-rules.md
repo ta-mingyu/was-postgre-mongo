@@ -216,7 +216,7 @@ MongoDB driver socketTimeoutMS (0 = 무제한, 애플리케이션 레벨 제어)
 1. **DB 전용 서버 기준**: WiredTiger 캐시 공식은 DB 전용 서버 기준. 공유 환경은 25% 수준으로 명시적 제한
 2. **PSS 표준 준수**: Replica Set 구성은 PSS(3노드)를 기본으로. PSA는 예외적 허용. 단, PSA에서 Secondary 다운 시 w:majority 쓰기 영구 정지(Stall) 위험이 있으므로 정산/결제 도메인은 PSA 절대 금지
 3. **COLLSCAN Zero-Tolerance**: COLLSCAN 발생 시 즉시 인덱스 추가. 프로파일링 미설정 상태는 허용하지 않음
-4. **버저닝**: 가이드 갱신 시 `reports/db-standard-guide-v{N}.md` 생성 후 AGENTS.md 링크 갱신
+4. **버저닝**: 가이드 갱신 시 `reports/db-standard-guide-v{N}.md` 생성 후 CLAUDE.md 링크 갱신
 5. **Cross-domain 참조**: WAS Connection Pool 변경 시 WAS harness 로드, PostgreSQL PgPool 변경 시 PostgreSQL harness 로드
 6. **HITL-004 준수**: COLLSCAN 모니터링 관련 사항은 TA 승인 전 확정하지 않음
 7. **서비스 분류 기준**: Read Preference / Write Concern 선택 시 서비스 성격(정산/결제 vs 조회성)을 명확히 구분하여 적용

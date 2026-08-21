@@ -217,7 +217,7 @@ net.ipv4.tcp_tw_reuse = 1
 ## 8. 에이전트 작업 규칙
 
 1. **기준선 유지**: 산출물(`reports/was-standard-guide.md`)의 공식과 매트릭스를 기본선으로 삼고, 명확한 근거 없이 변경하지 않음
-2. **버저닝**: 가이드 갱신 시 `reports/was-standard-guide-v{N}.md` 생성 후 AGENTS.md 링크 갱신
+2. **버저닝**: 가이드 갱신 시 `reports/was-standard-guide-v{N}.md` 생성 후 CLAUDE.md 링크 갱신
 3. **HITL 준수**: HITL-003 (CL플랫폼 Old 영역) 관련 사항은 TA 승인 전 확정하지 않음
 4. **Cross-domain 참조**: DB 설정 변경이 필요한 작업은 PostgreSQL/MongoDB harness 규칙을 추가 로드 후 진행
 5. **방화벽 제약**: 사내망 TCP Established Timeout = 30분(1,800초). 모든 타임아웃 산정의 최상위 기준

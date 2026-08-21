@@ -188,3 +188,12 @@
 - [x] `reports/final/pgpool-ii.md` §4: 검증 체크리스트 2건 추가 (delegate_ip 설정, trusted_servers 2개 이상)
 - [x] `harness/postgresql-rules.md` §3.3: delegate_ip, trusted_servers 참조 추가
 - [x] `harness/postgresql-rules.md` §7: 검증 체크리스트 항목 15/16 추가
+
+## Phase 17: Claude 하네스 전환 (OpenCode -> Claude Code) [Completed]
+
+- [x] 기존 하네스 감사: AGENTS.md(인덱스) + harness/ 12종 + .opencode/skills 3종, 에이전트 정의 부재 확인
+- [x] `.claude/agents/` 전문 에이전트 6종 생성: was-jvm-tuner, postgresql-pgpool-tuner, mongodb-tuner, webserver-tuner(신규 도메인), linux-kernel-tuner(신규 도메인), cross-domain-verifier(경계면 검증/QA)
+- [x] `.claude/skills/` 스킬 9종 생성: ta-infra-orchestrator(진입점) + 도메인 5종(was/postgresql-pgpool/mongodb/webserver/linux-kernel-tuning) + 프로세스 3종(gap-analysis, update-guide, verify-standards -- .opencode 마이그레이션)
+- [x] CLAUDE.md 신설(하네스 포인터 + 인덱스 + 변경 이력), AGENTS.md/.opencode/ 삭제(완전 전환)
+- [x] harness/·study/ 기존 문서 참조 갱신(AGENTS.md->CLAUDE.md, .opencode->.claude, ralph/ulw 루프 정책 재작성, context7 언거 정리)
+- [x] harness/ 지식 파일은 제자리 유지(reports/study 기존 링크 보존), 스킬이 경로 참조

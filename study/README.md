@@ -71,7 +71,7 @@ graph TD
 ## 산출물과의 관계
 
 - 본 학습 문서는 `reports/final/*.md`(운영자 배포 정본)의 **"왜"를 보충**하는 Explanation 자료.
-- 값의 정확성·시효성은 `harness/vendor-research.md`(리서치 근거)와 `.opencode/skills/verify-standards`(검증 절차)가 담당.
+- 값의 정확성·시효성은 `harness/vendor-research.md`(리서치 근거)와 `.claude/skills/verify-standards`(검증 절차)가 담당.
 - 본 문서가 권위 있는 산출물은 아니다. 설정 적용 시에는 항상 `reports/final/` 정본을 따를 것.
 
 ## 핵심 도메인 간 불변량 (전 장에 등장)

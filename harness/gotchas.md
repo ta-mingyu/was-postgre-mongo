@@ -9,13 +9,13 @@
 | 1 | `source/` 하위 파일 **수정** | 4개 팀 제출 원천 데이터. 읽기 전용. 변경 시 신뢰성 상실 |
 | 2 | `harness/` 에 **Report 본문** 작성 | 규칙·메타데이터만. 본문은 항상 `reports/` |
 | 3 | TA 승인 전 **HITL 이슈 확정/변경** | HITL-003(CL플랫폼 Old 영역), HITL-004(MongoDB COLLSCAN) |
-| 4 | 이전 버전 Report 파일(`-v1`, `-v2`) **삭제** | 히스토리 보존. AGENTS.md는 최신만 가리킴 |
+| 4 | 이전 버전 Report 파일(`-v1`, `-v2`) **삭제** | 히스토리 보존. CLAUDE.md는 최신만 가리킴 |
 | 5 | 타임아웃 캐스케이드에 **등호(`<=`)** 사용 | 엄격 부등호(`<`)로 계층 격리 필수 |
 | 6 | 정산/결제 도메인에 **PSA(Primary+Secondary+Arbiter) 구성** | Secondary 1대 다운 시 w:majority 쓰기 영구 정지(Stall). 반드시 PSS |
 | 7 | `autovacuum = off` (PostgreSQL) | 비활성화 절대 금지 |
 | 8 | WAS `maxThreads = -1`(무제한) 설정 | 반드시 0 초과 명시값 |
 | 9 | Metaspace `Max < Min` (역전) | 역전 현상 절대 금지 |
-| 10 | 산출물에 **일반 블로그/커뮤니티 글** 출처 인용 | 공식 문서·벤더 소스 코드·JIRA·release notes·context7 MCP만 허용. 블로그(Medium, 개인 블로그 등)는 초기 힌트 only, 최종 인용은 일차 출처로 교차 검증 필수. `verify-standards` SKILL §2 신뢰 계층 준수 |
+| 10 | 산출물에 **일반 블로그/커뮤니티 글** 출처 인용 | 공식 문서·벤더 소스 코드·JIRA·release notes만 허용(공식 문서 사이트 웹 조회 포함). 블로그(Medium, 개인 블로그 등)는 초기 힌트 only, 최종 인용은 일차 출처로 교차 검증 필수. `verify-standards` 스킬 신뢰 계층 준수 |
 
 ## 도메인 공통 불변량 (한 도메인 변경 시 전체 재검증)
 

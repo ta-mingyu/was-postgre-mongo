@@ -6,7 +6,8 @@
 
 ```mermaid
 graph TD
-    ROOT["was-postgre-mongo/"] --> A[AGENTS.md<br/>목차 전용]
+    ROOT["was-postgre-mongo/"] --> A[CLAUDE.md<br/>하네스 포인터 + 인덱스]
+    ROOT --> CL[.claude/<br/>에이전트 6종 + 스킬 9종]
     ROOT --> T[todo.md<br/>작업 로드맵]
     ROOT --> PPT[Infrastructure_Standardization_Consulting.pptx]
     ROOT --> WS[server-spec.code-workspace]
@@ -41,7 +42,8 @@ graph TD
 
 | 경로 | 역할 | 비고 |
 | :--- | :--- | :--- |
-| `AGENTS.md` | 목차(Index). 본문 없음, harness/ 참조만 | 규격: 목차 전용 |
+| `CLAUDE.md` | Claude 하네스 포인터(트리거·변경 이력) + 프로젝트 인덱스 | 새 세션 진입점 |
+| `.claude/` | Claude 하네스 — `agents/` 전문 에이전트 6종, `skills/` 스킬 9종 | 오케스트레이터: `ta-infra-orchestrator` |
 | `harness/` | 에이전트 구동 규칙, 산정 공식, 팀 메타, 함정 | 본 파일이 속한 곳 |
 | `reports/` | 표준 가이드라인 산출물 | Report 본문은 항상 여기 |
 | `reports/final/` | **서버별 정본**(운영자 배포용) | 가장 권위 있는 사본 |
@@ -63,7 +65,7 @@ graph TD
     style C fill:#e8e8e8,stroke:#999
 ```
 
-- **정본(final/) 변경 시**: 반드시 `reports/` 의 해당 개별 최신본(-v{N})도 같이 갱신하고 AGENTS.md 링크를 최신으로 맞춘다.
+- **정본(final/) 변경 시**: 반드시 `reports/` 의 해당 개별 최신본(-v{N})도 같이 갱신하고 CLAUDE.md 링크를 최신으로 맞춘다.
 - harness/ 에는 Report 본문을 절대 두지 않는다(규칙·메타데이터만).
 
 ## 주요 산출물 엔트리포인트

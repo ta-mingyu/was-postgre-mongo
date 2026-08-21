@@ -68,7 +68,7 @@ graph TD
 ## 산출물과의 관계
 
 - 이 학습서는 `reports/final/*.md`(운영자 배포 정본)와 `study/02~05`(도메인 장)의 **"왜"를 보충**하는 Explanation 자료다.
-- 값의 정확성·시효성은 `harness/vendor-research.md`(리서치 근거)와 `.opencode/skills/verify-standards`(검증 절차)가 담당한다.
+- 값의 정확성·시효성은 `harness/vendor-research.md`(리서치 근거)와 `.claude/skills/verify-standards`(검증 절차)가 담당한다.
 - 이 학습서가 권위 있는 산출물은 아니다. 설정 적용 시에는 항상 `reports/final/` 정본을 따른다.
 - 모든 기술 주장은 kernel.org Documentation, man pages, RHEL 공식 가이드, RFC에 근거하며, 각 장 말미에 출처를 명시한다.
 

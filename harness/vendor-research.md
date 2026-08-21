@@ -134,7 +134,7 @@
 
 ## 4. 표준값 변경 이력 (verify-standards 검증 결과)
 
-> 외부 리서치(context7, 벤더 공식 문서, release notes) 기반 검증으로 식별된 정합성 이슈 및 TA 확정 변경 사항. `verify-standards` 스킬 절차에 따라 기록.
+> 외부 리서치(벤더 공식 문서, 소스 코드, JIRA, release notes) 기반 검증으로 식별된 정합성 이슈 및 TA 확정 변경 사항. `verify-standards` 스킬 절차에 따라 기록.
 
 ### 4.1 [2026-07-02] PgPool backend_weight 표준화
 

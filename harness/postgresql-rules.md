@@ -257,7 +257,7 @@ DB max_connections = X
 
 1. **DB 전용 서버 기준**: 모든 산출 공식은 DB 전용 서버(또는 VM) 기준. 공유 환경은 별도 명시
 2. **스트리밍 복제 필수**: HA 아키텍처는 내장 스트리밍 복제 + PgPool-II 연계를 표준으로 함
-3. **버저닝**: 가이드 갱신 시 `reports/db-standard-guide-v{N}.md` 생성 후 AGENTS.md 링크 갱신
+3. **버저닝**: 가이드 갱신 시 `reports/db-standard-guide-v{N}.md` 생성 후 CLAUDE.md 링크 갱신
 4. **Cross-domain 참조**: WAS Connection Pool 변경이 필요한 작업은 WAS harness 규칙을 추가 로드
 5. **방화벽 제약**: 사내망 TCP Established Timeout = 30분(1,800초). 모든 타임아웃 산정의 최상위 기준
 6. **PgPool 단일 DB 기준**: `max_pool = 1`을 기본으로 하되, 복수 DB/계정 환경은 조합 수만큼 상향 명시
